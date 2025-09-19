@@ -52,7 +52,14 @@ def _sample_report(exit_code: int = 0) -> Report:
         managers=["pypi"],
         findings=findings,
         generated_at=datetime.utcnow(),
-        stats={"dependency_count": len(findings)},
+        stats={
+            "dependency_count": len(findings),
+            "direct_dependencies": len([f for f in findings if f.dependency.direct]),
+            "indirect_dependencies": len([f for f in findings if not f.dependency.direct]),
+            "graph_nodes": len(findings),
+            "graph_edges": 0,
+            "manager_usage": {"pypi": len(findings)},
+        },
     )
 
 

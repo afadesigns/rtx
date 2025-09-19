@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -82,6 +83,9 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
             },
         )
 
+    direct_count = sum(1 for finding in findings if finding.dependency.direct)
+    manager_usage = Counter(finding.dependency.ecosystem for finding in findings)
+
     report = Report(
         path=root,
         managers=sorted(set(used_managers or managers or [])),
@@ -89,8 +93,11 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
         generated_at=datetime.utcnow(),
         stats={
             "dependency_count": len(findings),
+            "direct_dependencies": direct_count,
+            "indirect_dependencies": len(findings) - direct_count,
             "graph_nodes": len(graph),
             "graph_edges": graph.edge_count(),
+            "manager_usage": dict(sorted(manager_usage.items())),
         },
     )
     return report

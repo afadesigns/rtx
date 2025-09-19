@@ -36,3 +36,9 @@ def test_npm_scanner_reads_package_lock(tmp_path: Path) -> None:
 def test_get_scanners_unknown() -> None:
     with pytest.raises(ValueError, match="Unknown package manager"):
         get_scanners(["does-not-exist"])
+
+
+def test_get_scanners_deduplicates_input_order() -> None:
+    scanners = get_scanners(["pypi", "npm", "pypi", "npm"])
+    names = [type(scanner).__name__ for scanner in scanners]
+    assert names == ["PyPIScanner", "NpmScanner"]

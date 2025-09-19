@@ -84,13 +84,21 @@ class SignalSummary:
                 category_counts[signal.category] += 1
                 per_category_severity[signal.category][signal.severity.value] += 1
                 severity_totals[signal.severity.value] += 1
+        def _sort_severity(data: dict[str, int]) -> dict[str, int]:
+            return dict(
+                sorted(
+                    data.items(),
+                    key=lambda item: SEVERITY_RANK.get(item[0], float("inf")),
+                )
+            )
+
         return cls(
             counts=dict(sorted(category_counts.items())),
             severity_counts={
-                category: dict(sorted(counter.items()))
+                category: _sort_severity(dict(counter))
                 for category, counter in sorted(per_category_severity.items())
             },
-            severity_totals=dict(sorted(severity_totals.items())),
+            severity_totals=_sort_severity(dict(severity_totals)),
         )
 
     def has_data(self) -> bool:
@@ -151,14 +159,23 @@ class Report:
 
     def summary(self) -> dict[str, Any]:
         counts: dict[str, int] = {severity.value: 0 for severity in Severity}
+        direct = 0
+        manager_usage: Counter[str] = Counter()
         for finding in self.findings:
             counts[finding.verdict.value] += 1
+            if finding.dependency.direct:
+                direct += 1
+            manager_usage[finding.dependency.ecosystem] += 1
         signal_summary = self.signal_summary()
+        indirect = len(self.findings) - direct
         return {
             "generated_at": self.generated_at.isoformat(),
             "managers": self.managers,
             "counts": counts,
             "total": len(self.findings),
+            "direct_dependencies": direct,
+            "indirect_dependencies": indirect,
+            "manager_usage": dict(sorted(manager_usage.items())),
             "exit_code": self.exit_code(),
             "path": str(self.path),
             "signal_counts": signal_summary.counts,

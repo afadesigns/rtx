@@ -36,7 +36,11 @@ def get_scanners(names: List[str] | None = None) -> List[BaseScanner]:
     selected = names or list(SCANNER_CLASSES.keys())
     scanners: List[BaseScanner] = []
     unknown: List[str] = []
+    seen: set[str] = set()
     for name in selected:
+        if name in seen:
+            continue
+        seen.add(name)
         cls = SCANNER_CLASSES.get(name)
         if cls is None:
             unknown.append(name)

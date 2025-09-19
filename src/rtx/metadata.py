@@ -100,6 +100,14 @@ class MetadataClient:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def clear_cache(self, *, cancel_inflight: bool = False) -> None:
+        async with self._lock:
+            if cancel_inflight:
+                for task in self._inflight.values():
+                    task.cancel()
+            self._cache.clear()
+            self._inflight.clear()
+
     async def fetch(self, dependency: Dependency) -> ReleaseMetadata:
         key = dependency.coordinate
         async with self._lock:

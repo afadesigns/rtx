@@ -29,8 +29,9 @@ def test_signal_summary_from_findings() -> None:
 
     assert summary.has_data()
     assert summary.counts == {"churn": 1, "maintainer": 2}
+    assert list(summary.severity_counts["maintainer"].keys()) == ["medium"]
     assert summary.severity_counts["maintainer"]["medium"] == 2
-    assert summary.severity_totals == {"high": 1, "medium": 2}
+    assert summary.severity_totals == {"medium": 2, "high": 1}
 
 
 def test_signal_summary_empty() -> None:

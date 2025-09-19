@@ -4,11 +4,11 @@ import os
 from pathlib import Path
 from typing import Dict, List
 
+from rtx import __version__
+
 DATA_DIR = Path(__file__).parent / "data"
 CACHE_DIR = Path.home() / ".cache" / "rtx"
-HTTP_TIMEOUT = 5.0
-HTTP_RETRIES = 2
-USER_AGENT = "rtx/0.1.0 (+https://github.com/afadesigns/rtx)"
+USER_AGENT = f"rtx/{__version__} (+https://github.com/afadesigns/rtx)"
 
 
 def _int_env(name: str, default: int) -> int:
@@ -22,7 +22,32 @@ def _int_env(name: str, default: int) -> int:
     return max(1, value)
 
 
+def _non_negative_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 POLICY_ANALYSIS_CONCURRENCY = _int_env("RTX_POLICY_CONCURRENCY", 16)
+HTTP_TIMEOUT = _float_env("RTX_HTTP_TIMEOUT", 5.0)
+HTTP_RETRIES = _non_negative_int_env("RTX_HTTP_RETRIES", 2)
+GITHUB_MAX_CONCURRENCY = _int_env("RTX_GITHUB_MAX_CONCURRENCY", 6)
 
 OSV_API_URL = "https://api.osv.dev/v1/querybatch"
 GITHUB_ADVISORY_URL = "https://api.github.com/graphql"

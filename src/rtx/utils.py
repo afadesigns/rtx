@@ -8,6 +8,7 @@ import textwrap
 from collections import defaultdict
 from functools import lru_cache
 from hashlib import sha256
+from itertools import islice
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Sequence, Tuple, TypeVar
 
@@ -17,16 +18,19 @@ T = TypeVar("T")
 
 
 class AsyncRetry:
-    def __init__(self, retries: int, delay: float) -> None:
+    def __init__(self, retries: int, delay: float, *, exceptions: tuple[type[Exception], ...] = (Exception,)) -> None:
         self.retries = retries
         self.delay = delay
+        self._exceptions = exceptions
 
     async def __call__(self, task: Callable[[], Awaitable[T]]) -> T:
         attempt = 0
         while True:
             try:
                 return await task()
-            except Exception:  # noqa: BLE001
+            except asyncio.CancelledError:
+                raise
+            except self._exceptions:
                 attempt += 1
                 if attempt > self.retries:
                     raise
@@ -83,9 +87,21 @@ def slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
 
-def chunked(iterable: Sequence[T], size: int) -> Iterable[Sequence[T]]:
-    for i in range(0, len(iterable), size):
-        yield iterable[i : i + size]
+def chunked(iterable: Iterable[T], size: int) -> Iterable[List[T]]:
+    if size <= 0:
+        raise ValueError("chunk size must be positive")
+    if isinstance(iterable, Sequence):
+        for i in range(0, len(iterable), size):
+            chunk = iterable[i : i + size]
+            if chunk:
+                yield list(chunk)
+        return
+    iterator = iter(iterable)
+    while True:
+        chunk = list(islice(iterator, size))
+        if not chunk:
+            break
+        yield chunk
 
 
 def multiline(text: str) -> str:
@@ -97,6 +113,7 @@ def load_json_resource(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@lru_cache(maxsize=None)
 def load_yaml_resource(path: Path) -> Any:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -105,7 +122,7 @@ def env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
-    return raw.lower() in {"1", "true", "yes", "on"}
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class Graph:
@@ -114,17 +131,21 @@ class Graph:
         self._edges: Dict[str, List[str]] = defaultdict(list)
 
     def add_node(self, key: str, metadata: Dict[str, Any]) -> None:
-        self._nodes.setdefault(key, metadata)
+        node = self._nodes.setdefault(key, {})
+        node.update(metadata)
 
     def add_edge(self, src: str, dest: str) -> None:
         if dest not in self._edges[src]:
             self._edges[src].append(dest)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"nodes": self._nodes, "edges": self._edges}
+        return {
+            "nodes": {key: dict(value) for key, value in self._nodes.items()},
+            "edges": {key: list(values) for key, values in self._edges.items()},
+        }
 
     def dependencies_of(self, key: str) -> List[str]:
-        return self._edges.get(key, [])
+        return list(self._edges.get(key, []))
 
     def __len__(self) -> int:
         return len(self._nodes)

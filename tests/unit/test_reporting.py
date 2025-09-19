@@ -89,7 +89,14 @@ def _sample_report() -> Report:
         managers=["pypi"],
         findings=[finding],
         generated_at=datetime.utcnow(),
-        stats={"dependency_count": 1},
+        stats={
+            "dependency_count": 1,
+            "direct_dependencies": 1,
+            "indirect_dependencies": 0,
+            "graph_nodes": 1,
+            "graph_edges": 0,
+            "manager_usage": {"pypi": 1},
+        },
     )
 
 
@@ -104,6 +111,51 @@ def test_render_json_roundtrip(tmp_path: Path) -> None:
     assert payload["summary"]["signal_counts"]["maintainer"] == 1
     assert payload["summary"]["signal_severity_totals"]["low"] == 1
     assert payload["summary"]["signal_severity_counts"]["maintainer"]["low"] == 1
+    assert payload["summary"]["manager_usage"] == {"pypi": 1}
+    assert payload["summary"]["direct_dependencies"] == 1
+    assert payload["summary"]["indirect_dependencies"] == 0
+
+
+def test_report_summary_includes_dependency_breakdown() -> None:
+    direct_dep = Dependency(
+        ecosystem="pypi",
+        name="demo-direct",
+        version="1.0.0",
+        direct=True,
+        manifest=Path("pyproject.toml"),
+        metadata={},
+    )
+    indirect_dep = Dependency(
+        ecosystem="npm",
+        name="demo-indirect",
+        version="2.0.0",
+        direct=False,
+        manifest=Path("package.json"),
+        metadata={},
+    )
+    findings = [
+        PackageFinding(dependency=direct_dep, advisories=[], signals=[], score=0.0),
+        PackageFinding(dependency=indirect_dep, advisories=[], signals=[], score=0.0),
+    ]
+    report = Report(
+        path=Path("."),
+        managers=["pypi", "npm"],
+        findings=findings,
+        generated_at=datetime.utcnow(),
+        stats={
+            "dependency_count": 2,
+            "direct_dependencies": 1,
+            "indirect_dependencies": 1,
+            "graph_nodes": 0,
+            "graph_edges": 0,
+            "manager_usage": {"npm": 1, "pypi": 1},
+        },
+    )
+
+    summary = report.summary()
+    assert summary["direct_dependencies"] == 1
+    assert summary["indirect_dependencies"] == 1
+    assert summary["manager_usage"] == {"npm": 1, "pypi": 1}
 
 
 def test_render_html_writes_file(tmp_path: Path) -> None:

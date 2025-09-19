@@ -24,6 +24,29 @@ def test_parse_date_normalizes_timezone() -> None:
     assert parsed.day == 19
 
 
+@pytest.mark.asyncio
+async def test_clear_cache_resets_state(tmp_path: Path) -> None:
+    client = MetadataClient()
+    dependency = Dependency("pypi", "pkg", "1.0.0", True, tmp_path)
+    metadata = ReleaseMetadata(None, 0, 0, [], "pypi")
+    client._cache[dependency.coordinate] = metadata
+
+    async def pending() -> None:
+        await asyncio.sleep(10)
+
+    task = asyncio.create_task(pending())
+    client._inflight[dependency.coordinate] = task
+
+    try:
+        await client.clear_cache(cancel_inflight=True)
+        await asyncio.sleep(0)
+        assert not client._cache
+        assert not client._inflight
+        assert task.cancelled()
+    finally:
+        await client.close()
+
+
 class _PassthroughRetry:
     async def __call__(self, task):  # type: ignore[override]
         return await task()
