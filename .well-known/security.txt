@@ -1,0 +1,5 @@
+Contact: mailto:security@afadesigns.com
+Encryption: https://afadesigns.com/pgp.txt
+Preferred-Languages: en
+Policy: https://github.com/afadesigns/rtx/blob/main/SECURITY.md
+Acknowledgements: https://github.com/afadesigns/rtx/blob/main/CHANGELOG.md

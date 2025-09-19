@@ -1,0 +1,12 @@
+{
+  "npm": ["react", "lodash", "express", "axios", "typescript", "commander"],
+  "pypi": ["requests", "numpy", "pandas", "flask", "fastapi", "django"],
+  "maven": ["org.springframework:spring-core", "com.google.guava:guava", "org.apache.logging.log4j:log4j-core"],
+  "crates": ["serde", "tokio", "reqwest", "rand", "clap"],
+  "go": ["github.com/gin-gonic/gin", "golang.org/x/crypto", "github.com/stretchr/testify"],
+  "packagist": ["symfony/symfony", "laravel/framework", "guzzlehttp/guzzle"],
+  "nuget": ["Newtonsoft.Json", "Serilog", "AutoMapper"],
+  "rubygems": ["rails", "nokogiri", "devise"],
+  "homebrew": ["openssl", "python", "node"],
+  "conda": ["python", "numpy", "scipy"]
+}

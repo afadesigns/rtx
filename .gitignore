@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.egg-info/
+.eggs/
+*.egg
+build/
+dist/
+.wheelhouse/
+.python-version
+.env
+.venv
+.cache/
+pytest_cache/
+cover/
+coverage.xml
+htmlcov/
+.coverage
+.mypy_cache/
+.dmypy.json
+.pytest_cache/
+
+# IDEs & tools
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node
+node_modules/
+**/node_modules/
+*.log
+yarn-error.log
+.pnpm-store/
+.npm/
+
+# Rust
+/target
+
+# Go
+bin/
+
+# Java
+*.class
+*.jar
+
+# Docker
+*.pid
+
+# Reports
+reports/
+artifacts/

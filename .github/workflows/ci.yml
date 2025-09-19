@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_CACHE_DIR: "1"
+  RTX_HTTP_TIMEOUT: "5"
+  RTX_LOG_LEVEL: "INFO"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8ade135a5619b1710c0db15e8b562c6d84f0f7ee
+      - name: Set up Python
+        uses: actions/setup-python@0ac093b3e5f9a7c06d0f5bd8b63fd7d7084f57b6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+      - name: Ruff lint
+        run: ruff check src tests
+      - name: Ruff format check
+        run: ruff format --check src tests
+      - name: Semgrep
+        run: semgrep --config p/ci
+
+  typecheck:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8ade135a5619b1710c0db15e8b562c6d84f0f7ee
+      - name: Set up Python
+        uses: actions/setup-python@0ac093b3e5f9a7c06d0f5bd8b63fd7d7084f57b6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+      - name: Type check
+        run: mypy src
+
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    needs: typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8ade135a5619b1710c0db15e8b562c6d84f0f7ee
+      - name: Set up Python
+        uses: actions/setup-python@0ac093b3e5f9a7c06d0f5bd8b63fd7d7084f57b6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+      - name: Run tests
+        run: pytest -q
+      - name: Upload coverage
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9
+        with:
+          name: coverage-report
+          path: .coverage
+
+  fuzz:
+    runs-on: ubuntu-latest
+    needs: tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8ade135a5619b1710c0db15e8b562c6d84f0f7ee
+      - name: Set up Python
+        uses: actions/setup-python@0ac093b3e5f9a7c06d0f5bd8b63fd7d7084f57b6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+      - name: Run fuzz harnesses
+        run: pytest tests/fuzz
+
+  sbom:
+    runs-on: ubuntu-latest
+    needs: fuzz
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8ade135a5619b1710c0db15e8b562c6d84f0f7ee
+      - name: Set up Python
+        uses: actions/setup-python@0ac093b3e5f9a7c06d0f5bd8b63fd7d7084f57b6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+      - name: Generate SBOM
+        run: python -m rtx.sbom_cli --output sbom.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9
+        with:
+          name: sbom
+          path: sbom.json

@@ -1,0 +1,18 @@
+version: "3.9"
+services:
+  rtx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: afadesigns/rtx:0.1.0
+    command: ["scan"]
+    volumes:
+      - ./:/workspace:ro
+    environment:
+      - RTX_HTTP_TIMEOUT=5
+      - RTX_LOG_LEVEL=INFO
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp

@@ -1,0 +1,42 @@
+name: Bug report
+description: File a report to help us improve Real Tracker X
+labels: [bug]
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Security issues? Please use SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: Provide a clear and concise description.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, manifests, or sample projects.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Use `rtx --log-level debug` and paste relevant excerpts.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Validations
+      options:
+        - label: I ran `make lint typecheck test` locally
+        - label: I searched existing issues

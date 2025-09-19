@@ -1,0 +1,6 @@
+[project]
+name = "mixed-backend"
+version = "0.2.0"
+dependencies = [
+  "django==4.2.7"
+]

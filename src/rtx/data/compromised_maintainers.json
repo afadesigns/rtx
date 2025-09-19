@@ -1,0 +1,30 @@
+[
+  {
+    "ecosystem": "npm",
+    "actor": "event-stream",
+    "package": "event-stream",
+    "last_seen": "2018-11-26",
+    "reference": "https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident"
+  },
+  {
+    "ecosystem": "npm",
+    "actor": "coa",
+    "package": "coa",
+    "last_seen": "2021-11-04",
+    "reference": "https://github.blog/news-insights/security/security-alert-coa-and-rc-are-compromised/"
+  },
+  {
+    "ecosystem": "pypi",
+    "actor": "ctx",
+    "package": "ctx",
+    "last_seen": "2023-05-25",
+    "reference": "https://blog.pypi.org/posts/2023-05-25-malicious-package-update/"
+  },
+  {
+    "ecosystem": "rubygems",
+    "actor": "bootstrap-sass",
+    "package": "bootstrap-sass",
+    "last_seen": "2022-03-27",
+    "reference": "https://blog.rubygems.org/2022/03/27/bootstrap-sass.html"
+  }
+]

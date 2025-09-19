@@ -1,0 +1,41 @@
+site_name: Real Tracker X
+site_description: Cross-ecosystem dependency trust scanner authored by Andreas Fahl
+site_url: https://afadesigns.github.io/rtx
+repo_url: https://github.com/afadesigns/rtx
+docs_dir: docs
+
+nav:
+  - Overview: index.md
+  - Getting Started: getting-started.md
+  - CLI Reference: cli.md
+  - API Reference: api.md
+  - Threat Model: SECURITY.md
+  - Troubleshooting: troubleshooting.md
+  - Release Notes: ../CHANGELOG.md
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: cyan
+      accent: purple
+  features:
+    - navigation.top
+    - search.suggest
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
