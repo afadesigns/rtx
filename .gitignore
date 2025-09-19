@@ -19,10 +19,9 @@ pytest_cache/
 cover/
 coverage.xml
 htmlcov/
-<<<<<<< HEAD
 .coverage
-=======
->>>>>>> 49cd188 (loop-1-consolidation: applied 5 optimizations)
+.coverage
+.coverage.*
 .mypy_cache/
 .dmypy.json
 .pytest_cache/

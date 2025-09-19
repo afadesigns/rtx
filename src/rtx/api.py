@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
 from rtx.exceptions import ManifestNotFound
-from rtx.models import PackageFinding, Report
+from rtx.models import Dependency, PackageFinding, Report
 from rtx.policy import TrustPolicyEngine
 from rtx.registry import get_scanners
 from rtx.utils import Graph
@@ -29,18 +29,44 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
     if not discovered:
         raise ManifestNotFound("No supported manifests found")
 
+    unique_deps: Dict[str, Dependency] = {}
+    for dep in discovered:
+        existing = unique_deps.get(dep.coordinate)
+        if existing is None:
+            unique_deps[dep.coordinate] = dep
+            continue
+        combined_metadata = {**existing.metadata, **dep.metadata}
+        manifest_values = {str(existing.manifest), str(dep.manifest)}
+        previous_manifests = combined_metadata.get("manifests")
+        if isinstance(previous_manifests, (list, tuple, set)):
+            manifest_values.update(str(path) for path in previous_manifests)
+        elif isinstance(previous_manifests, str):
+            manifest_values.add(previous_manifests)
+        combined_metadata["manifests"] = sorted(manifest_values)
+        unique_deps[dep.coordinate] = Dependency(
+            ecosystem=existing.ecosystem,
+            name=existing.name,
+            version=existing.version,
+            direct=existing.direct or dep.direct,
+            manifest=existing.manifest,
+            metadata=combined_metadata,
+        )
+    dependencies = list(unique_deps.values())
+
     async with AdvisoryClient() as advisory_client:
-        advisory_map = await advisory_client.fetch_advisories(discovered)
+        advisory_map = await advisory_client.fetch_advisories(dependencies)
 
     engine = TrustPolicyEngine()
+    limit = max(1, getattr(config, "POLICY_ANALYSIS_CONCURRENCY", 1))
+    semaphore = asyncio.Semaphore(limit)
+
+    async def analyze_with_limit(dep: Dependency) -> PackageFinding:
+        async with semaphore:
+            return await engine.analyze(dep, advisory_map.get(dep.coordinate, []))
+
     try:
         findings: List[PackageFinding] = list(
-            await asyncio.gather(
-                *[
-                    engine.analyze(dep, advisory_map.get(dep.coordinate, []))
-                    for dep in discovered
-                ]
-            )
+            await asyncio.gather(*(analyze_with_limit(dep) for dep in dependencies))
         )
     finally:
         await engine.close()

@@ -87,6 +87,17 @@ def test_scan_rejects_unknown_format(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     assert "Unsupported format" in capsys.readouterr().out
 
 
+def test_scan_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
+    def fail(_path: Path, managers=None):
+        raise ValueError("Unknown package manager(s): foo")
+
+    monkeypatch.setattr("rtx.cli.scan_project", fail, raising=False)
+    exit_code = main(["scan", "--path", str(tmp_path), "--manager", "foo"])
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Unknown package manager(s): foo" in captured.out
+
+
 def test_report_renders_from_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
     report = _sample_report(exit_code=2)
     payload = report.to_dict()
@@ -114,6 +125,27 @@ def test_report_renders_from_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert exit_code == 2
     assert captured["fmt"] == "json"
     assert Path(captured["output"]).name == "out.json"
+
+
+def test_pre_upgrade_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
+    def fail(_path: Path, managers=None):
+        raise ValueError("Unknown package manager(s): foo")
+
+    monkeypatch.setattr("rtx.cli.scan_project", fail, raising=False)
+    exit_code = main(
+        [
+            "pre-upgrade",
+            "--path",
+            str(tmp_path),
+            "--package",
+            "requests",
+            "--version",
+            "2.32.0",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Unknown package manager(s): foo" in captured.out
 
 
 def test_report_from_payload_roundtrip() -> None:

@@ -36,6 +36,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
         return 2
     try:
         report = scan_project(Path(args.path), managers)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 2
     except ManifestNotFound as exc:
         console.print(f"[red]{exc}[/red]")
         return 3
@@ -64,7 +67,11 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def cmd_pre_upgrade(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
-    report = scan_project(Path(args.path), [args.manager] if args.manager else None)
+    try:
+        report = scan_project(Path(args.path), [args.manager] if args.manager else None)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 2
     baseline = next(
         (
             finding

@@ -8,6 +8,7 @@ CACHE_DIR = Path.home() / ".cache" / "rtx"
 HTTP_TIMEOUT = 5.0
 HTTP_RETRIES = 2
 USER_AGENT = "rtx/0.1.0 (+https://github.com/afadesigns/rtx)"
+POLICY_ANALYSIS_CONCURRENCY = 16
 
 OSV_API_URL = "https://api.osv.dev/v1/querybatch"
 GITHUB_ADVISORY_URL = "https://api.github.com/graphql"

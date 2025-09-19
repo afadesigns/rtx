@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from rtx import config
 from rtx.metadata import MetadataClient, ReleaseMetadata
@@ -47,6 +47,13 @@ class TrustPolicyEngine:
         compromised_path = config.DATA_DIR / "compromised_maintainers.json"
         self._top_packages: Dict[str, List[str]] = load_json_resource(top_packages_path)
         self._compromised = load_json_resource(compromised_path)
+        self._compromised_index: Dict[Tuple[str, str], Dict[str, str]] = {
+            (entry.get("ecosystem"), entry.get("package")): entry
+            for entry in self._compromised
+            if isinstance(entry, dict)
+            and entry.get("ecosystem")
+            and entry.get("package")
+        }
         self._metadata_client = MetadataClient()
 
     async def analyze(self, dependency: Dependency, advisories: List[Advisory]) -> PackageFinding:
@@ -96,20 +103,16 @@ class TrustPolicyEngine:
                 )
             )
         # Compromised maintainers dataset
-        for entry in self._compromised:
-            if (
-                entry.get("ecosystem") == dependency.ecosystem
-                and entry.get("package") == dependency.name
-            ):
-                signals.append(
-                    TrustSignal(
-                        category="compromised-maintainer",
-                        severity=Severity.CRITICAL,
-                        message="Package previously compromised",
-                        evidence={"reference": entry.get("reference")},
-                    )
+        compromised = self._compromised_index.get((dependency.ecosystem, dependency.name))
+        if compromised:
+            signals.append(
+                TrustSignal(
+                    category="compromised-maintainer",
+                    severity=Severity.CRITICAL,
+                    message="Package previously compromised",
+                    evidence={"reference": compromised.get("reference")},
                 )
-                break
+            )
         # Typosquatting detection
         baseline = self._top_packages.get(dependency.ecosystem, [])
         for top_name in baseline:

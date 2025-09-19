@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from rtx.scanners.npm import NpmScanner
 from rtx.scanners.pypi import PyPIScanner
+from rtx.registry import get_scanners
 
 
 def test_pypi_scanner_reads_pyproject(tmp_path: Path) -> None:
@@ -28,3 +31,8 @@ def test_npm_scanner_reads_package_lock(tmp_path: Path) -> None:
     scanner = NpmScanner()
     packages = scanner.scan(project)
     assert packages[0].name == "lodash"
+
+
+def test_get_scanners_unknown() -> None:
+    with pytest.raises(ValueError, match="Unknown package manager"):
+        get_scanners(["does-not-exist"])

@@ -35,8 +35,14 @@ SCANNER_CLASSES: Dict[str, Type[BaseScanner]] = {
 def get_scanners(names: List[str] | None = None) -> List[BaseScanner]:
     selected = names or list(SCANNER_CLASSES.keys())
     scanners: List[BaseScanner] = []
+    unknown: List[str] = []
     for name in selected:
         cls = SCANNER_CLASSES.get(name)
-        if cls is not None:
-            scanners.append(cls())
+        if cls is None:
+            unknown.append(name)
+            continue
+        scanners.append(cls())
+    if unknown:
+        unknown_sorted = ", ".join(sorted(set(unknown)))
+        raise ValueError(f"Unknown package manager(s): {unknown_sorted}")
     return scanners
