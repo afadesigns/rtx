@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -46,7 +46,7 @@ def _sample_report(exit_code: int = 0) -> Report:
         else [],
         score=1.0 if exit_code else 0.0,
     )
-    findings: List[PackageFinding] = [finding] if exit_code else []
+    findings: list[PackageFinding] = [finding] if exit_code else []
     return Report(
         path=Path("."),
         managers=["pypi"],
@@ -63,9 +63,13 @@ def mock_logging(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_scan_invokes_render(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
     report = _sample_report(exit_code=0)
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    monkeypatch.setattr("rtx.api.scan_project", lambda path, managers=None: report, raising=False)
+    monkeypatch.setattr(
+        "rtx.api.scan_project",
+        lambda path, managers=None: report,
+        raising=False,
+    )
     monkeypatch.setattr(
         "rtx.reporting.render_table",
         lambda report_obj, console=None: captured.update({"fmt": "table"}),
@@ -99,17 +103,56 @@ def test_scan_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, c
     assert "Unknown package manager(s): foo" in captured.out
 
 
-def test_report_renders_from_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
+def test_scan_signal_summary_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    report = _sample_report(exit_code=2)
+    monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
+    monkeypatch.setattr("rtx.reporting.render_table", lambda *_, **__: None, raising=False)
+    monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
+
+    exit_code = main(
+        [
+            "scan",
+            "--path",
+            str(tmp_path),
+            "--show-signal-summary",
+            "--signal-summary-output",
+            str(tmp_path / "summary.json"),
+        ]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr().out
+    assert "Signals: maintainer=1" in captured
+    summary_path = tmp_path / "summary.json"
+    data = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert data["counts"]["maintainer"] == 1
+
+
+def test_report_renders_from_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
     report = _sample_report(exit_code=2)
     payload = report.to_dict()
     payload["summary"]["generated_at"] = report.generated_at.isoformat()
     report_file = tmp_path / "report.json"
     report_file.write_text(json.dumps(payload), encoding="utf-8")
 
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
     monkeypatch.setattr(
         "rtx.reporting.render",
-        lambda report_obj, fmt, output: captured.update({"fmt": fmt, "output": output, "exit": report_obj.exit_code()}),
+        lambda report_obj, fmt, output: captured.update(
+            {
+                "fmt": fmt,
+                "output": output,
+                "exit": report_obj.exit_code(),
+            }
+        ),
         raising=False,
     )
 
@@ -128,6 +171,34 @@ def test_report_renders_from_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert Path(captured["output"]).name == "out.json"
 
 
+def test_report_signal_summary_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    report = _sample_report(exit_code=2)
+    payload = report.to_dict()
+    payload["summary"]["generated_at"] = report.generated_at.isoformat()
+    report_file = tmp_path / "report.json"
+    report_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr("rtx.reporting.render", lambda *_, **__: None, raising=False)
+
+    exit_code = main(
+        [
+            "report",
+            str(report_file),
+            "--format",
+            "table",
+            "--show-signal-summary",
+        ]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr().out
+    assert "Signals: maintainer=1" in captured
+
+
 def test_report_missing_file(tmp_path: Path, capsys: Any) -> None:
     exit_code = main(["report", str(tmp_path / "missing.json")])
     captured = capsys.readouterr()
@@ -135,7 +206,11 @@ def test_report_missing_file(tmp_path: Path, capsys: Any) -> None:
     assert "Failed to read report file" in captured.out
 
 
-def test_pre_upgrade_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
+def test_pre_upgrade_unknown_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
     def fail(_path: Path, managers=None):
         raise ValueError("Unknown package manager(s): foo")
 

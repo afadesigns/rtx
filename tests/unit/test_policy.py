@@ -59,3 +59,90 @@ async def test_advisory_influences_score(monkeypatch, tmp_path) -> None:
         assert finding.verdict in {Severity.HIGH, Severity.CRITICAL}
     finally:
         await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_policy_flags_missing_maintainers(monkeypatch, tmp_path) -> None:
+    engine = TrustPolicyEngine()
+
+    async def fake_fetch(_dep: Dependency) -> ReleaseMetadata:
+        return ReleaseMetadata(
+            latest_release=datetime.utcnow(),
+            releases_last_30d=0,
+            total_releases=5,
+            maintainers=[],
+            ecosystem="pypi",
+        )
+
+    monkeypatch.setattr(engine._metadata_client, "fetch", fake_fetch)
+    dependency = Dependency(
+        ecosystem="pypi",
+        name="example",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path,
+    )
+    try:
+        finding = await engine.analyze(dependency, [])
+        maintainer_signal = next(signal for signal in finding.signals if signal.category == "maintainer")
+        assert maintainer_signal.severity == Severity.MEDIUM
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_policy_flags_high_churn(monkeypatch, tmp_path) -> None:
+    engine = TrustPolicyEngine()
+
+    async def fake_fetch(_dep: Dependency) -> ReleaseMetadata:
+        return ReleaseMetadata(
+            latest_release=datetime.utcnow(),
+            releases_last_30d=12,
+            total_releases=20,
+            maintainers=["alice", "bob", "carol"],
+            ecosystem="npm",
+        )
+
+    monkeypatch.setattr(engine._metadata_client, "fetch", fake_fetch)
+    dependency = Dependency(
+        ecosystem="npm",
+        name="example-package",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path,
+    )
+    try:
+        finding = await engine.analyze(dependency, [])
+        churn_signal = next(signal for signal in finding.signals if signal.category == "churn")
+        assert churn_signal.severity == Severity.HIGH
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_policy_flags_low_maturity(monkeypatch, tmp_path) -> None:
+    engine = TrustPolicyEngine()
+
+    async def fake_fetch(_dep: Dependency) -> ReleaseMetadata:
+        return ReleaseMetadata(
+            latest_release=datetime.utcnow(),
+            releases_last_30d=0,
+            total_releases=1,
+            maintainers=["alice", "bob"],
+            ecosystem="crates",
+        )
+
+    monkeypatch.setattr(engine._metadata_client, "fetch", fake_fetch)
+    dependency = Dependency(
+        ecosystem="crates",
+        name="demo",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path,
+    )
+    try:
+        finding = await engine.analyze(dependency, [])
+        maturity_signal = next(signal for signal in finding.signals if signal.category == "maturity")
+        assert maturity_signal.severity == Severity.LOW
+    finally:
+        await engine.close()

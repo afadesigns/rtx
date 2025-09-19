@@ -50,6 +50,38 @@ class ReleaseMetadata:
     def has_suspicious_churn(self) -> bool:
         return self.releases_last_30d >= 5
 
+    def churn_band(self) -> str:
+        if self.releases_last_30d >= 10:
+            return "high"
+        if self.releases_last_30d >= 5:
+            return "medium"
+        return "normal"
+
+    def maintainer_count(self) -> int:
+        unique = set()
+        for maintainer in self.maintainers:
+            if not isinstance(maintainer, str):
+                continue
+            cleaned = maintainer.strip()
+            if cleaned:
+                unique.add(cleaned.lower())
+        return len(unique)
+
+    def has_maintainers(self) -> bool:
+        return self.maintainer_count() > 0
+
+    def is_low_maturity(self, minimum_releases: int = 3) -> bool:
+        if minimum_releases <= 0:
+            return False
+        return self.total_releases < minimum_releases
+
+    def days_since_latest(self, *, now: Optional[datetime] = None) -> Optional[int]:
+        if not self.latest_release:
+            return None
+        reference = now or datetime.utcnow()
+        delta = reference - self.latest_release
+        return max(delta.days, 0)
+
 
 class MetadataClient:
     def __init__(self, *, timeout: float = config.HTTP_TIMEOUT, retries: int = config.HTTP_RETRIES) -> None:
@@ -98,6 +130,14 @@ class MetadataClient:
             return await self._retry(lambda: self._fetch_crates(dependency))
         if dependency.ecosystem == "go":
             return await self._retry(lambda: self._fetch_gomod(dependency))
+        if dependency.ecosystem == "rubygems":
+            return await self._retry(lambda: self._fetch_rubygems(dependency))
+        if dependency.ecosystem == "maven":
+            return await self._retry(lambda: self._fetch_maven(dependency))
+        if dependency.ecosystem == "nuget":
+            return await self._retry(lambda: self._fetch_nuget(dependency))
+        if dependency.ecosystem == "packagist":
+            return await self._retry(lambda: self._fetch_packagist(dependency))
         return ReleaseMetadata(latest_release=None, releases_last_30d=0, total_releases=0, maintainers=[], ecosystem=dependency.ecosystem)
 
     async def _fetch_pypi(self, dependency: Dependency) -> ReleaseMetadata:
@@ -199,3 +239,162 @@ class MetadataClient:
                 if now - released <= timedelta(days=30):
                     releases_last_30d += 1
         return ReleaseMetadata(last_release, releases_last_30d, total, [], dependency.ecosystem)
+
+    async def _fetch_rubygems(self, dependency: Dependency) -> ReleaseMetadata:
+        name = dependency.name
+        versions_url = f"https://rubygems.org/api/v1/versions/{name}.json"
+        response = await self._client.get(versions_url)
+        if response.status_code == 404:
+            return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
+        response.raise_for_status()
+        entries = response.json()
+        if not isinstance(entries, list):
+            entries = []
+        now = datetime.utcnow()
+        latest = None
+        releases_last_30d = 0
+        total = 0
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            created = _parse_date(entry.get("created_at") or entry.get("built_at"))
+            if not created:
+                continue
+            total += 1
+            if not latest or created > latest:
+                latest = created
+            if now - created <= timedelta(days=30):
+                releases_last_30d += 1
+
+        maintainers: list[str] = []
+        gem_url = f"https://rubygems.org/api/v1/gems/{name}.json"
+        detail_response = await self._client.get(gem_url)
+        if detail_response.status_code == 200:
+            details = detail_response.json()
+            authors = details.get("authors")
+            if isinstance(authors, str):
+                maintainers = [author.strip() for author in authors.split(",") if author.strip()]
+
+        return ReleaseMetadata(latest, releases_last_30d, total, maintainers, dependency.ecosystem)
+
+    async def _fetch_maven(self, dependency: Dependency) -> ReleaseMetadata:
+        if ":" not in dependency.name:
+            return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
+        group, artifact = dependency.name.split(":", 1)
+        params = {
+            "q": f'g:"{group}" AND a:"{artifact}"',
+            "core": "gav",
+            "rows": 50,
+            "wt": "json",
+            "sort": "timestamp desc",
+        }
+        response = await self._client.get("https://search.maven.org/solrsearch/select", params=params)
+        if response.status_code == 404:
+            return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
+        response.raise_for_status()
+        payload = response.json()
+        docs = payload.get("response", {}).get("docs", [])
+        if not isinstance(docs, list):
+            docs = []
+        now = datetime.utcnow()
+        latest = None
+        releases_last_30d = 0
+        total = 0
+        for doc in docs:
+            if not isinstance(doc, dict):
+                continue
+            timestamp = doc.get("timestamp")
+            created: datetime | None
+            if isinstance(timestamp, (int, float)):
+                created = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).replace(tzinfo=None)
+            elif isinstance(timestamp, str):
+                created = _parse_date(timestamp)
+            else:
+                created = None
+            if not created:
+                continue
+            total += 1
+            if not latest or created > latest:
+                latest = created
+            if now - created <= timedelta(days=30):
+                releases_last_30d += 1
+
+        if total == 0:
+            total = int(payload.get("response", {}).get("numFound", 0))
+
+        return ReleaseMetadata(latest, releases_last_30d, total, [], dependency.ecosystem)
+
+    async def _fetch_nuget(self, dependency: Dependency) -> ReleaseMetadata:
+        package_id = dependency.name.lower()
+        url = f"https://api.nuget.org/v3/registration5-semver1/{package_id}/index.json"
+        response = await self._client.get(url)
+        if response.status_code == 404:
+            return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
+        response.raise_for_status()
+        data = response.json()
+        items = data.get("items", []) if isinstance(data, dict) else []
+        now = datetime.utcnow()
+        latest = None
+        releases_last_30d = 0
+        total = 0
+        maintainers: list[str] = []
+        for page in items:
+            entries = page.get("items") if isinstance(page, dict) else None
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                catalog = entry.get("catalogEntry") if isinstance(entry, dict) else None
+                if not isinstance(catalog, dict):
+                    continue
+                published = _parse_date(catalog.get("published"))
+                if not published:
+                    continue
+                total += 1
+                if not latest or published > latest:
+                    latest = published
+                if now - published <= timedelta(days=30):
+                    releases_last_30d += 1
+                authors = catalog.get("authors")
+                if isinstance(authors, str):
+                    maintainers.extend(author.strip() for author in authors.split(",") if author.strip())
+        maintainers = sorted({name for name in maintainers if name})
+        return ReleaseMetadata(latest, releases_last_30d, total, maintainers, dependency.ecosystem)
+
+    async def _fetch_packagist(self, dependency: Dependency) -> ReleaseMetadata:
+        if "/" not in dependency.name:
+            return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
+        vendor, package = dependency.name.split("/", 1)
+        url = f"https://repo.packagist.org/packages/{vendor}/{package}.json"
+        response = await self._client.get(url)
+        if response.status_code == 404:
+            return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
+        response.raise_for_status()
+        payload = response.json()
+        packages = payload.get("package", {}).get("versions", {})
+        if not isinstance(packages, dict):
+            packages = {}
+        now = datetime.utcnow()
+        latest = None
+        releases_last_30d = 0
+        total = 0
+        maintainers: list[str] = []
+        for version_data in packages.values():
+            if not isinstance(version_data, dict):
+                continue
+            time_value = version_data.get("time")
+            published = _parse_date(time_value) if isinstance(time_value, str) else None
+            if published:
+                total += 1
+                if not latest or published > latest:
+                    latest = published
+                if now - published <= timedelta(days=30):
+                    releases_last_30d += 1
+            authors = version_data.get("authors")
+            if isinstance(authors, list):
+                for author in authors:
+                    if isinstance(author, dict):
+                        name = author.get("name") or author.get("homepage")
+                        if isinstance(name, str) and name:
+                            maintainers.append(name)
+        maintainers = sorted({name for name in maintainers if name})
+        return ReleaseMetadata(latest, releases_last_30d, total, maintainers, dependency.ecosystem)

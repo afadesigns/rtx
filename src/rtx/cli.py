@@ -8,16 +8,18 @@ import sys
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+
+from rich.console import Console
 
 from rtx.exceptions import ManifestNotFound, ReportRenderingError
-
-if TYPE_CHECKING:  # pragma: no cover - imports for type checkers only
-    from rich.console import Console
+from rtx.models import Report, Severity
 
 
 def _configure_logging(level: str) -> None:
-    logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO), format="[%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="[%(levelname)s] %(message)s",
+    )
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
@@ -57,6 +59,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if args.sbom_output:
         write_sbom(report, path=str(args.sbom_output))
 
+    _handle_signal_summary(
+        report,
+        console=console,
+        show=args.show_signal_summary,
+        output=args.signal_summary_output,
+    )
+
     return report.exit_code()
 
 
@@ -64,7 +73,7 @@ def cmd_pre_upgrade(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
     from rtx.advisory import AdvisoryClient
     from rtx.api import scan_project
-    from rtx.models import Dependency, PackageFinding, Severity
+    from rtx.models import Dependency, PackageFinding
     from rtx.policy import TrustPolicyEngine
 
     console = _get_console()
@@ -83,7 +92,9 @@ def cmd_pre_upgrade(args: argparse.Namespace) -> int:
         None,
     )
     if baseline is None:
-        console.print(f"[yellow]Package '{args.package}' not found in current dependency graph[/yellow]")
+        console.print(
+            f"[yellow]Package '{args.package}' not found in current dependency graph[/yellow]"
+        )
         return 1
 
     dependency = Dependency(
@@ -140,6 +151,12 @@ def cmd_report(args: argparse.Namespace) -> int:
             console.print("[red]--output is required for json/html rendering[/red]")
             return 2
         render(report, fmt=fmt, output=Path(args.output))
+    _handle_signal_summary(
+        report,
+        console=console,
+        show=args.show_signal_summary,
+        output=args.signal_summary_output,
+    )
     return report.exit_code()
 
 
@@ -157,7 +174,7 @@ def _report_from_payload(payload: dict) -> Report:
 
     summary = payload.get("summary", {})
     findings_data = payload.get("findings", [])
-    findings: List[PackageFinding] = []
+    findings: list[PackageFinding] = []
     for entry in findings_data:
         dependency = Dependency(
             ecosystem=entry.get("ecosystem", "unknown"),
@@ -187,10 +204,21 @@ def _report_from_payload(payload: dict) -> Report:
             for sig in entry.get("signals", [])
         ]
         score = float(entry.get("score", 0.0) or 0.0)
-        findings.append(PackageFinding(dependency=dependency, advisories=advisories, signals=signals, score=score))
+        findings.append(
+            PackageFinding(
+                dependency=dependency,
+                advisories=advisories,
+                signals=signals,
+                score=score,
+            )
+        )
 
     generated_at = summary.get("generated_at")
-    timestamp = datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else datetime.utcnow()
+    timestamp = (
+        datetime.fromisoformat(generated_at)
+        if isinstance(generated_at, str)
+        else datetime.utcnow()
+    )
     managers = summary.get("managers", [])
     if isinstance(managers, str):
         managers = [managers]
@@ -213,19 +241,57 @@ def _coerce_severity(value: object) -> Severity:
 
 
 @lru_cache(maxsize=1)
-def _get_console() -> "Console":
+def _get_console() -> Console:
     from rich.console import Console
 
     return Console()
 
 
+def _handle_signal_summary(
+    report: Report,
+    *,
+    console: Console,
+    show: bool,
+    output: str | None,
+) -> None:
+    if not show and not output:
+        return
+    summary = report.signal_summary()
+    if show:
+        if not summary.has_data():
+            console.print("No trust signals generated for this report.", style="green")
+        else:
+            counts_display = ", ".join(
+                f"{category}={count}" for category, count in summary.counts.items()
+            )
+            severity_display = ", ".join(
+                f"{severity}={count}" for severity, count in summary.severity_totals.items()
+            )
+            console.print(f"Signals: {counts_display}", style="bold cyan")
+            if severity_display:
+                console.print(f"Signal severities: {severity_display}", style="cyan")
+    if output:
+        path = Path(output)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = summary.to_dict()
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="rtx", description="Real Tracker X dependency trust scanner")
+    parser = argparse.ArgumentParser(
+        prog="rtx",
+        description="Real Tracker X dependency trust scanner",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scan_parser = subparsers.add_parser("scan", help="Scan manifests and compute trust report")
     scan_parser.add_argument("--path", default=".", help="Project root to scan")
-    scan_parser.add_argument("--manager", action="append", help="Repeat for each manager to include", default=None)
+    scan_parser.add_argument(
+        "--manager",
+        action="append",
+        help="Repeat for each manager to include",
+        default=None,
+    )
     scan_parser.add_argument(
         "--format",
         default="table",
@@ -237,6 +303,12 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--json-output", help="Persist JSON report")
     scan_parser.add_argument("--html-output", help="Persist HTML report")
     scan_parser.add_argument("--sbom-output", help="Write CycloneDX SBOM")
+    scan_parser.add_argument(
+        "--show-signal-summary",
+        action="store_true",
+        help="Print signal category and severity aggregates",
+    )
+    scan_parser.add_argument("--signal-summary-output", help="Write signal summary JSON to path")
     scan_parser.add_argument("--log-level", default="INFO", help="Logging level")
     scan_parser.set_defaults(func=cmd_scan)
 
@@ -258,6 +330,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="table|json|html",
     )
     report_parser.add_argument("--output", help="Destination for json/html output")
+    report_parser.add_argument(
+        "--show-signal-summary",
+        action="store_true",
+        help="Print signal aggregates",
+    )
+    report_parser.add_argument("--signal-summary-output", help="Write signal summary JSON")
     report_parser.add_argument("--log-level", default="INFO")
     report_parser.set_defaults(func=cmd_report)
 
@@ -267,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

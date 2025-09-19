@@ -16,6 +16,8 @@ All notable changes to Real Tracker X will be documented here. This project adhe
 - Restore the console entry point so the published `rtx` script boots without import errors.
 - Add comprehensive metadata fetcher tests backed by `httpx.MockTransport` fixtures.
 - Relax dependency pins for `httpx` and `PyYAML` to stay compatible with downstream security baselines.
+- Enrich release metadata heuristics with RubyGems, Maven, NuGet, and Packagist ecosystem support.
+- Strengthen trust policy signals with maintainer absence, release churn severity, low maturity detection, and surface aggregate signal counts across CLI and HTML reports.
 
 ## [0.1.0] - 2025-09-19
 ### Added

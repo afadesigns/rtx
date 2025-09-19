@@ -72,6 +72,15 @@ class TrustPolicyEngine:
 
     def _derive_signals(self, dependency: Dependency, metadata: ReleaseMetadata) -> List[TrustSignal]:
         signals: List[TrustSignal] = []
+        if metadata.latest_release is None:
+            signals.append(
+                TrustSignal(
+                    category="release-metadata",
+                    severity=Severity.MEDIUM,
+                    message="Upstream registry does not publish release timestamps",
+                    evidence={"ecosystem": metadata.ecosystem},
+                )
+            )
         # Abandonment
         if metadata.is_abandoned():
             signals.append(
@@ -79,11 +88,24 @@ class TrustPolicyEngine:
                     category="abandonment",
                     severity=Severity.HIGH,
                     message="No release in the last 18 months",
-                    evidence={"latest_release": metadata.latest_release.isoformat() if metadata.latest_release else None},
+                    evidence={
+                        "latest_release": metadata.latest_release.isoformat() if metadata.latest_release else None,
+                        "days_since_release": metadata.days_since_latest(),
+                    },
                 )
             )
         # Suspicious churn
-        if metadata.has_suspicious_churn():
+        churn_band = metadata.churn_band()
+        if churn_band == "high":
+            signals.append(
+                TrustSignal(
+                    category="churn",
+                    severity=Severity.HIGH,
+                    message="Extreme release velocity in the last 30 days",
+                    evidence={"releases_last_30d": metadata.releases_last_30d},
+                )
+            )
+        elif churn_band == "medium":
             signals.append(
                 TrustSignal(
                     category="churn",
@@ -93,13 +115,33 @@ class TrustPolicyEngine:
                 )
             )
         # Bus factor
-        if len(metadata.maintainers) <= 1:
+        maintainer_count = metadata.maintainer_count()
+        if maintainer_count == 0:
+            signals.append(
+                TrustSignal(
+                    category="maintainer",
+                    severity=Severity.MEDIUM,
+                    message="No maintainers listed in upstream metadata",
+                    evidence={"maintainers": metadata.maintainers},
+                )
+            )
+        elif maintainer_count == 1:
             signals.append(
                 TrustSignal(
                     category="maintainer",
                     severity=Severity.LOW,
                     message="Single maintainer detected",
                     evidence={"maintainers": metadata.maintainers},
+                )
+            )
+        # Release maturity
+        if metadata.is_low_maturity():
+            signals.append(
+                TrustSignal(
+                    category="maturity",
+                    severity=Severity.LOW,
+                    message="Limited release history detected",
+                    evidence={"total_releases": metadata.total_releases},
                 )
             )
         # Compromised maintainers dataset

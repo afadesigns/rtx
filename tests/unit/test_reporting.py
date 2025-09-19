@@ -2,13 +2,56 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
 from rtx.exceptions import ReportRenderingError
 from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity, TrustSignal
-from rtx.reporting import render, render_json
+from rtx.reporting import render, render_json, render_table
+
+
+def test_render_table_includes_signal_details() -> None:
+    dependency = Dependency(
+        ecosystem="pypi",
+        name="demo",
+        version="1.0.0",
+        direct=True,
+        manifest=Path("pyproject.toml"),
+        metadata={},
+    )
+    signal = TrustSignal(
+        category="maintainer",
+        severity=Severity.MEDIUM,
+        message="No maintainers listed",
+        evidence={"maintainers": []},
+    )
+    finding = PackageFinding(
+        dependency=dependency,
+        advisories=[],
+        signals=[signal],
+        score=0.4,
+    )
+    report = Report(
+        path=Path("."),
+        managers=["pypi"],
+        findings=[finding],
+        generated_at=datetime.utcnow(),
+        stats={"dependency_count": 1},
+    )
+
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=False, color_system=None, width=120, record=False)
+    render_table(report, console=console)
+    output = buffer.getvalue()
+
+    assert "maintainer (medium)" in output
+    assert "No maintainers listed" in output
+    assert "[maintainers=[]]" in output
+    assert "Signals: maintainer=1" in output
+    assert "Signal severities: medium=1" in output
 
 
 def _sample_report() -> Report:
@@ -58,6 +101,9 @@ def test_render_json_roundtrip(tmp_path: Path) -> None:
     assert saved == serialized
     payload = json.loads(serialized)
     assert payload["summary"]["total"] == 1
+    assert payload["summary"]["signal_counts"]["maintainer"] == 1
+    assert payload["summary"]["signal_severity_totals"]["low"] == 1
+    assert payload["summary"]["signal_severity_counts"]["maintainer"]["low"] == 1
 
 
 def test_render_html_writes_file(tmp_path: Path) -> None:
@@ -67,6 +113,8 @@ def test_render_html_writes_file(tmp_path: Path) -> None:
     contents = output.read_text(encoding="utf-8")
     assert "Real Tracker X" in contents
     assert "Demo package" in contents
+    assert "Signal Breakdown" in contents
+    assert "Signal Severities" in contents
 
 
 def test_render_requires_output_for_json(tmp_path: Path) -> None:

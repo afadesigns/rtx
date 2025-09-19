@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any
 
 SEVERITY_RANK = {
     "none": 0,
@@ -23,7 +25,7 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
     @classmethod
-    def from_score(cls, score: float) -> "Severity":
+    def from_score(cls, score: float) -> Severity:
         if score >= 0.85:
             return cls.CRITICAL
         if score >= 0.7:
@@ -42,7 +44,7 @@ class Dependency:
     version: str
     direct: bool
     manifest: Path
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def coordinate(self) -> str:
@@ -55,7 +57,7 @@ class Advisory:
     source: str
     severity: Severity
     summary: str
-    references: List[str] = field(default_factory=list)
+    references: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -63,14 +65,50 @@ class TrustSignal:
     category: str
     severity: Severity
     message: str
-    evidence: Dict[str, Any] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SignalSummary:
+    counts: dict[str, int]
+    severity_counts: dict[str, dict[str, int]]
+    severity_totals: dict[str, int]
+
+    @classmethod
+    def from_findings(cls, findings: Iterable[PackageFinding]) -> SignalSummary:
+        category_counts: Counter[str] = Counter()
+        per_category_severity: dict[str, Counter[str]] = defaultdict(Counter)
+        severity_totals: Counter[str] = Counter()
+        for finding in findings:
+            for signal in finding.signals:
+                category_counts[signal.category] += 1
+                per_category_severity[signal.category][signal.severity.value] += 1
+                severity_totals[signal.severity.value] += 1
+        return cls(
+            counts=dict(sorted(category_counts.items())),
+            severity_counts={
+                category: dict(sorted(counter.items()))
+                for category, counter in sorted(per_category_severity.items())
+            },
+            severity_totals=dict(sorted(severity_totals.items())),
+        )
+
+    def has_data(self) -> bool:
+        return bool(self.counts)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "counts": self.counts,
+            "severity_counts": self.severity_counts,
+            "severity_totals": self.severity_totals,
+        }
 
 
 @dataclass
 class PackageFinding:
     dependency: Dependency
-    advisories: List[Advisory] = field(default_factory=list)
-    signals: List[TrustSignal] = field(default_factory=list)
+    advisories: list[Advisory] = field(default_factory=list)
+    signals: list[TrustSignal] = field(default_factory=list)
     score: float = 0.0
 
     @property
@@ -90,15 +128,18 @@ class PackageFinding:
 @dataclass
 class Report:
     path: Path
-    managers: List[str]
-    findings: List[PackageFinding]
+    managers: list[str]
+    findings: list[PackageFinding]
     generated_at: datetime
-    stats: Dict[str, Any] = field(default_factory=dict)
+    stats: dict[str, Any] = field(default_factory=dict)
 
     def highest_severity(self) -> Severity:
         if not self.findings:
             return Severity.NONE
-        return max((finding.verdict for finding in self.findings), key=lambda s: SEVERITY_RANK[s.value])
+        return max(
+            (finding.verdict for finding in self.findings),
+            key=lambda severity: SEVERITY_RANK[severity.value],
+        )
 
     def exit_code(self) -> int:
         verdict = self.highest_severity()
@@ -108,10 +149,11 @@ class Report:
             return 1
         return 0
 
-    def summary(self) -> Dict[str, Any]:
-        counts: Dict[str, int] = {severity.value: 0 for severity in Severity}
+    def summary(self) -> dict[str, Any]:
+        counts: dict[str, int] = {severity.value: 0 for severity in Severity}
         for finding in self.findings:
             counts[finding.verdict.value] += 1
+        signal_summary = self.signal_summary()
         return {
             "generated_at": self.generated_at.isoformat(),
             "managers": self.managers,
@@ -119,9 +161,12 @@ class Report:
             "total": len(self.findings),
             "exit_code": self.exit_code(),
             "path": str(self.path),
+            "signal_counts": signal_summary.counts,
+            "signal_severity_counts": signal_summary.severity_counts,
+            "signal_severity_totals": signal_summary.severity_totals,
         }
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "summary": self.summary(),
             "findings": [
@@ -162,3 +207,6 @@ class Report:
 
     def __iter__(self) -> Iterable[PackageFinding]:
         return iter(self.findings)
+
+    def signal_summary(self) -> SignalSummary:
+        return SignalSummary.from_findings(self.findings)

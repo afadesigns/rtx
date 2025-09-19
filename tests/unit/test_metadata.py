@@ -201,3 +201,185 @@ async def test_fetch_gomod_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     assert metadata.total_releases == 2
     assert metadata.maintainers == []
     assert any(path.endswith("@v/list") for path in requested)
+
+
+@pytest.mark.asyncio
+async def test_fetch_rubygems_parses_metadata(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("rubygems", "demo", "1.0.0", True, tmp_path)
+    now = datetime.utcnow()
+
+    async def handler(request: "httpx.Request") -> "httpx.Response":
+        if request.url.path.endswith("/versions/demo.json"):
+            return httpx.Response(
+                200,
+                json=[
+                    {"created_at": now.isoformat()},
+                    {"created_at": (now - timedelta(days=45)).isoformat()},
+                ],
+            )
+        if request.url.path.endswith("/gems/demo.json"):
+            return httpx.Response(200, json={"authors": "Alice, Bob"})
+        return httpx.Response(404)
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_rubygems(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is not None
+    assert metadata.releases_last_30d == 1
+    assert metadata.total_releases == 2
+    assert metadata.maintainers == ["Alice", "Bob"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_maven_parses_metadata(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("maven", "org.demo:demo", "1.0.0", True, tmp_path)
+    now = datetime.utcnow()
+    recent = int(now.timestamp() * 1000)
+    older = int((now - timedelta(days=60)).timestamp() * 1000)
+
+    async def handler(request: "httpx.Request") -> "httpx.Response":
+        if request.url.host == "search.maven.org":
+            return httpx.Response(
+                200,
+                json={
+                    "response": {
+                        "numFound": 2,
+                        "docs": [
+                            {"timestamp": recent, "v": "1.1.0"},
+                            {"timestamp": older, "v": "1.0.0"},
+                        ],
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_maven(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is not None
+    assert metadata.releases_last_30d == 1
+    assert metadata.total_releases == 2
+    assert metadata.maintainers == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_nuget_parses_metadata(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("nuget", "Demo.Package", "1.0.0", True, tmp_path)
+    now = datetime.utcnow().isoformat()
+
+    async def handler(request: "httpx.Request") -> "httpx.Response":
+        if request.url.host == "api.nuget.org":
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "items": [
+                                {
+                                    "catalogEntry": {
+                                        "published": now,
+                                        "authors": "Alice, Bob",
+                                    }
+                                },
+                                {
+                                    "catalogEntry": {
+                                        "published": (datetime.utcnow() - timedelta(days=45)).isoformat(),
+                                        "authors": "Alice",
+                                    }
+                                },
+                            ]
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_nuget(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is not None
+    assert metadata.releases_last_30d == 1
+    assert metadata.total_releases == 2
+    assert metadata.maintainers == ["Alice", "Bob"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_packagist_parses_metadata(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("packagist", "vendor/demo", "1.0.0", True, tmp_path)
+    now = datetime.utcnow().isoformat()
+
+    async def handler(request: "httpx.Request") -> "httpx.Response":
+        if request.url.host == "repo.packagist.org":
+            return httpx.Response(
+                200,
+                json={
+                    "package": {
+                        "versions": {
+                            "1.0.0": {
+                                "time": now,
+                                "authors": [{"name": "Alice"}, {"name": "Bob"}],
+                            },
+                            "0.9.0": {
+                                "time": (datetime.utcnow() - timedelta(days=90)).isoformat(),
+                                "authors": [{"name": "Alice"}],
+                            },
+                        }
+                    }
+                },
+            )
+        return httpx.Response(404)
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_packagist(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is not None
+    assert metadata.releases_last_30d == 1
+    assert metadata.total_releases == 2
+    assert metadata.maintainers == ["Alice", "Bob"]
+def test_release_metadata_helper_methods() -> None:
+    latest = datetime(2025, 1, 1, 12, 0, 0)
+    metadata = ReleaseMetadata(
+        latest_release=latest,
+        releases_last_30d=7,
+        total_releases=2,
+        maintainers=["Alice", "bob", "Alice"],
+        ecosystem="pypi",
+    )
+    assert metadata.churn_band() == "medium"
+    assert metadata.maintainer_count() == 2
+    assert metadata.is_low_maturity()
+    assert metadata.days_since_latest(now=datetime(2025, 1, 11, 12, 0, 0)) == 10
+
+    high_churn = ReleaseMetadata(
+        latest_release=latest,
+        releases_last_30d=11,
+        total_releases=5,
+        maintainers=["Alice"],
+        ecosystem="pypi",
+    )
+    assert high_churn.churn_band() == "high"
+    assert not high_churn.is_low_maturity()

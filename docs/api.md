@@ -16,9 +16,10 @@ for finding in report:
 - Returns a [`Report`](../src/rtx/models.py) object with findings and summary helpers.
 
 ## Report Helpers
-- `Report.summary()` — returns counts, exit code, managers, path.
+- `Report.summary()` — returns counts, signal aggregates, exit code, managers, path.
+- `Report.signal_summary()` — reusable object with per-category and per-severity signal counts.
 - `Report.exit_code()` — convert verdicts into CI-friendly exit code.
-- `Report.to_dict()` — JSON-serializable structure.
+- `Report.to_dict()` — JSON-serializable structure (now includes `signal_summary`).
 
 ## Extending Scanners
 Subclass `rtx.scanners.base.BaseScanner` and register in `rtx.registry.SCANNER_CLASSES`.
