@@ -30,10 +30,7 @@ def _configure_logging(level: str) -> None:
 def cmd_scan(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
     managers = args.manager or None
-    fmt = args.format.lower()
-    if fmt not in {"table", "json", "html"}:
-        console.print(f"[red]Unsupported format '{args.format}'. Choose table, json, or html.[/red]")
-        return 2
+    fmt = args.format
     try:
         report = scan_project(Path(args.path), managers)
     except ValueError as exc:
@@ -116,12 +113,15 @@ def cmd_pre_upgrade(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
-    fmt = args.format.lower()
-    if fmt not in {"table", "json", "html"}:
-        console.print(f"[red]Unsupported format '{args.format}'.[/red]")
-        return 2
+    fmt = args.format
+    input_path = Path(args.input)
     try:
-        payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        contents = input_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        console.print(f"[red]Failed to read report file:[/] {exc}")
+        return 4
+    try:
+        payload = json.loads(contents)
     except json.JSONDecodeError as exc:
         console.print(f"[red]Invalid report JSON:[/] {exc}")
         return 4
@@ -205,7 +205,13 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser = subparsers.add_parser("scan", help="Scan manifests and compute trust report")
     scan_parser.add_argument("--path", default=".", help="Project root to scan")
     scan_parser.add_argument("--manager", action="append", help="Repeat for each manager to include", default=None)
-    scan_parser.add_argument("--format", default="table", help="Report format: table|json|html")
+    scan_parser.add_argument(
+        "--format",
+        default="table",
+        type=str.lower,
+        choices=("table", "json", "html"),
+        help="Report format: table|json|html",
+    )
     scan_parser.add_argument("--output", help="Destination for json/html output")
     scan_parser.add_argument("--json-output", help="Persist JSON report")
     scan_parser.add_argument("--html-output", help="Persist HTML report")
@@ -223,7 +229,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_parser = subparsers.add_parser("report", help="Render a stored JSON report")
     report_parser.add_argument("input", help="Path to JSON report")
-    report_parser.add_argument("--format", default="table", help="table|json|html")
+    report_parser.add_argument(
+        "--format",
+        default="table",
+        type=str.lower,
+        choices=("table", "json", "html"),
+        help="table|json|html",
+    )
     report_parser.add_argument("--output", help="Destination for json/html output")
     report_parser.add_argument("--log-level", default="INFO")
     report_parser.set_defaults(func=cmd_report)

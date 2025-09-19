@@ -9,6 +9,10 @@ All notable changes to Real Tracker X will be documented here. This project adhe
 - Deduplicate dependencies before analysis and bound concurrent policy evaluations to protect upstream services.
 - Surface actionable errors when unknown package managers are requested via the CLI.
 - Expand unit coverage around scanner registry and CLI error handling.
+- Precompile the HTML report template and eliminate duplicate JSON serialization for faster report generation.
+- Validate CLI format switches via argparse and emit clearer errors for missing report files.
+- Allow tuning trust-policy concurrency through the `RTX_POLICY_CONCURRENCY` environment variable and document the setting.
+- Extend reporting unit tests to cover JSON/HTML rendering success and failure modes.
 
 ## [0.1.0] - 2025-09-19
 ### Added

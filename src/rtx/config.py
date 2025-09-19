@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Dict, List
 
@@ -8,7 +9,20 @@ CACHE_DIR = Path.home() / ".cache" / "rtx"
 HTTP_TIMEOUT = 5.0
 HTTP_RETRIES = 2
 USER_AGENT = "rtx/0.1.0 (+https://github.com/afadesigns/rtx)"
-POLICY_ANALYSIS_CONCURRENCY = 16
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, value)
+
+
+POLICY_ANALYSIS_CONCURRENCY = _int_env("RTX_POLICY_CONCURRENCY", 16)
 
 OSV_API_URL = "https://api.osv.dev/v1/querybatch"
 GITHUB_ADVISORY_URL = "https://api.github.com/graphql"

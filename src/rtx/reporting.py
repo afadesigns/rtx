@@ -12,6 +12,8 @@ from rtx import config
 from rtx.exceptions import ReportRenderingError
 from rtx.models import PackageFinding, Report
 
+_HTML_REPORT_TEMPLATE = Template(config.HTML_TEMPLATE)
+
 
 def render_table(report: Report, *, console: Optional[Console] = None) -> None:
     console = console or Console()
@@ -41,19 +43,19 @@ def render_table(report: Report, *, console: Optional[Console] = None) -> None:
 
 def render_json(report: Report, *, path: Optional[Path] = None) -> str:
     payload = report.to_dict()
+    serialized = json.dumps(payload, indent=2)
     if path:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return json.dumps(payload, indent=2)
+        path.write_text(serialized, encoding="utf-8")
+    return serialized
 
 
 def render_html(report: Report, *, path: Path) -> None:
     try:
-        template = Template(config.HTML_TEMPLATE)
         payload = report.to_dict()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            template.render(summary=payload["summary"], findings=payload["findings"]),
+            _HTML_REPORT_TEMPLATE.render(summary=payload["summary"], findings=payload["findings"]),
             encoding="utf-8",
         )
     except Exception as exc:  # noqa: BLE001

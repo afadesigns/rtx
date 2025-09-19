@@ -32,6 +32,11 @@ rtx pre-upgrade --manager npm --package react --version 18.0.0
 rtx report --format json --output reports/rtx.json
 ```
 
+## Configuration & Tuning
+- Set `RTX_POLICY_CONCURRENCY` to throttle how many policy evaluations run in parallel (default `16`). Lower the value when scanning inside constrained CI runners or behind strict rate limits.
+- CLI format switches are validated directly by argparse. Passing an unsupported format (for example `--format pdf`) exits with an actionable error before any network calls occur.
+- Providing an unknown package manager via `--manager` now fails fast with the offending name, making misconfigurations obvious during automation.
+
 ## CLI Overview
 - `rtx scan`: Detect manifests in the current directory, build the dependency graph, and score trust.
 - `rtx pre-upgrade`: Simulate dependency upgrades and compare trust deltas before applying.

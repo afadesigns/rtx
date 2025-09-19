@@ -80,11 +80,12 @@ def test_scan_invokes_render(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ca
     assert "table" not in captured_stdout  # ensure our stub handled rendering
 
 
-def test_scan_rejects_unknown_format(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
-    monkeypatch.setattr("rtx.cli.scan_project", lambda path, managers=None: _sample_report(), raising=False)
-    exit_code = main(["scan", "--path", str(tmp_path), "--format", "pdf"])
-    assert exit_code == 2
-    assert "Unsupported format" in capsys.readouterr().out
+def test_scan_rejects_unknown_format(tmp_path: Path, capsys: Any) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["scan", "--path", str(tmp_path), "--format", "pdf"])
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "invalid choice" in captured.err
 
 
 def test_scan_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
@@ -125,6 +126,13 @@ def test_report_renders_from_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert exit_code == 2
     assert captured["fmt"] == "json"
     assert Path(captured["output"]).name == "out.json"
+
+
+def test_report_missing_file(tmp_path: Path, capsys: Any) -> None:
+    exit_code = main(["report", str(tmp_path / "missing.json")])
+    captured = capsys.readouterr()
+    assert exit_code == 4
+    assert "Failed to read report file" in captured.out
 
 
 def test_pre_upgrade_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
