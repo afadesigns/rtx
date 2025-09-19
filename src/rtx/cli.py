@@ -6,21 +6,14 @@ import json
 import logging
 import sys
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
-from rich.console import Console
+from rtx.exceptions import ManifestNotFound, ReportRenderingError
 
-from rtx.api import scan_project
-from rtx.advisory import AdvisoryClient
-from rtx.exceptions import ManifestNotFound, ReportRenderingError, RTXError
-from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity, TrustSignal
-from rtx.policy import TrustPolicyEngine
-from rtx.registry import SCANNER_CLASSES
-from rtx.reporting import render, render_json, render_table
-from rtx.sbom import write_sbom
-
-console = Console()
+if TYPE_CHECKING:  # pragma: no cover - imports for type checkers only
+    from rich.console import Console
 
 
 def _configure_logging(level: str) -> None:
@@ -29,6 +22,11 @@ def _configure_logging(level: str) -> None:
 
 def cmd_scan(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
+    from rtx.api import scan_project
+    from rtx.reporting import render, render_json, render_table
+    from rtx.sbom import write_sbom
+
+    console = _get_console()
     managers = args.manager or None
     fmt = args.format
     try:
@@ -64,6 +62,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def cmd_pre_upgrade(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
+    from rtx.advisory import AdvisoryClient
+    from rtx.api import scan_project
+    from rtx.models import Dependency, PackageFinding, Severity
+    from rtx.policy import TrustPolicyEngine
+
+    console = _get_console()
     try:
         report = scan_project(Path(args.path), [args.manager] if args.manager else None)
     except ValueError as exc:
@@ -113,6 +117,9 @@ def cmd_pre_upgrade(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
+    from rtx.reporting import render, render_table
+
+    console = _get_console()
     fmt = args.format
     input_path = Path(args.input)
     try:
@@ -137,12 +144,17 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_list_managers(_: argparse.Namespace) -> int:
+    from rtx.registry import SCANNER_CLASSES
+
+    console = _get_console()
     for name, cls in SCANNER_CLASSES.items():
         console.print(f"[bold]{name}[/bold]: {', '.join(cls.manifests)}")
     return 0
 
 
 def _report_from_payload(payload: dict) -> Report:
+    from rtx.models import Advisory, Dependency, PackageFinding, Report, TrustSignal
+
     summary = payload.get("summary", {})
     findings_data = payload.get("findings", [])
     findings: List[PackageFinding] = []
@@ -192,10 +204,19 @@ def _report_from_payload(payload: dict) -> Report:
 
 
 def _coerce_severity(value: object) -> Severity:
+    from rtx.models import Severity
+
     try:
         return Severity(str(value).lower())
     except ValueError:
         return Severity.LOW
+
+
+@lru_cache(maxsize=1)
+def _get_console() -> "Console":
+    from rich.console import Console
+
+    return Console()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -250,6 +271,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)
+
+
+def entrypoint() -> None:
+    sys.exit(main())
 
 
 if __name__ == "__main__":

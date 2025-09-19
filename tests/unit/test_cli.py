@@ -65,13 +65,13 @@ def test_scan_invokes_render(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ca
     report = _sample_report(exit_code=0)
     captured: Dict[str, Any] = {}
 
-    monkeypatch.setattr("rtx.cli.scan_project", lambda path, managers=None: report, raising=False)
+    monkeypatch.setattr("rtx.api.scan_project", lambda path, managers=None: report, raising=False)
     monkeypatch.setattr(
-        "rtx.cli.render_table",
+        "rtx.reporting.render_table",
         lambda report_obj, console=None: captured.update({"fmt": "table"}),
         raising=False,
     )
-    monkeypatch.setattr("rtx.cli.write_sbom", lambda *_, **__: None, raising=False)
+    monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
 
     exit_code = main(["scan", "--path", str(tmp_path)])
     assert exit_code == 0
@@ -92,7 +92,7 @@ def test_scan_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, c
     def fail(_path: Path, managers=None):
         raise ValueError("Unknown package manager(s): foo")
 
-    monkeypatch.setattr("rtx.cli.scan_project", fail, raising=False)
+    monkeypatch.setattr("rtx.api.scan_project", fail, raising=False)
     exit_code = main(["scan", "--path", str(tmp_path), "--manager", "foo"])
     captured = capsys.readouterr()
     assert exit_code == 2
@@ -108,7 +108,7 @@ def test_report_renders_from_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
     captured: Dict[str, Any] = {}
     monkeypatch.setattr(
-        "rtx.cli.render",
+        "rtx.reporting.render",
         lambda report_obj, fmt, output: captured.update({"fmt": fmt, "output": output, "exit": report_obj.exit_code()}),
         raising=False,
     )
@@ -139,7 +139,7 @@ def test_pre_upgrade_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     def fail(_path: Path, managers=None):
         raise ValueError("Unknown package manager(s): foo")
 
-    monkeypatch.setattr("rtx.cli.scan_project", fail, raising=False)
+    monkeypatch.setattr("rtx.api.scan_project", fail, raising=False)
     exit_code = main(
         [
             "pre-upgrade",
