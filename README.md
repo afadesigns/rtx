@@ -70,7 +70,7 @@ print(report.summary())
 
 ## FAQ
 **Why another dependency scanner?** rtx focuses on pre-upgrade guardrails, not post-incident triage.  
-**Does it phone home?** No. Network requests are limited to advisories and metadata endpoints and respect enterprise proxies.  
+**Does it phone home?** No. Network requests are limited to advisories and metadata endpoints; they respect enterprise proxies.  
 **Can I extend support?** Yes. Create a plugin under `src/rtx/scanners` and register it in `rtx.registry`.  
 **How do exit codes map to severity?** 0 = safe, 1 = medium trust gaps, 2 = high/critical risk.
 
