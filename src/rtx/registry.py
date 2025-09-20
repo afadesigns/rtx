@@ -17,6 +17,8 @@ from rtx.scanners import (
     RubyGemsScanner,
 )
 
+from rtx.utils import unique_preserving_order
+
 SCANNER_CLASSES: Dict[str, Type[BaseScanner]] = {
     "npm": NpmScanner,
     "pypi": PyPIScanner,
@@ -33,20 +35,25 @@ SCANNER_CLASSES: Dict[str, Type[BaseScanner]] = {
 
 
 def get_scanners(names: List[str] | None = None) -> List[BaseScanner]:
-    selected = names or list(SCANNER_CLASSES.keys())
+    if names is None:
+        selected = list(SCANNER_CLASSES.keys())
+    else:
+        selected = unique_preserving_order(names, key=str.casefold)
+
     scanners: List[BaseScanner] = []
     unknown: List[str] = []
     seen: set[str] = set()
-    for name in selected:
-        if name in seen:
+    for raw_name in selected:
+        normalized = raw_name.casefold()
+        if normalized in seen:
             continue
-        seen.add(name)
-        cls = SCANNER_CLASSES.get(name)
+        seen.add(normalized)
+        cls = SCANNER_CLASSES.get(normalized)
         if cls is None:
-            unknown.append(name)
+            unknown.append(raw_name)
             continue
         scanners.append(cls())
     if unknown:
-        unknown_sorted = ", ".join(sorted(set(unknown)))
-        raise ValueError(f"Unknown package manager(s): {unknown_sorted}")
+        message = ", ".join(unique_preserving_order(unknown, key=str.casefold))
+        raise ValueError(f"Unknown package manager(s): {message}")
     return scanners

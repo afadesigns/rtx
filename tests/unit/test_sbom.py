@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rtx import __version__
-from rtx.models import Dependency, PackageFinding, Report
+from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity
 from rtx.sbom import generate_sbom, write_sbom
 
 
@@ -49,6 +49,93 @@ def test_generate_sbom_includes_project_version_and_license(tmp_path: Path) -> N
     assert sbom["metadata"]["tools"][0]["version"] == __version__
     licenses = sbom["components"][0]["licenses"]
     assert {entry["license"]["id"] for entry in licenses} == {"MIT", "Apache-2.0"}
+
+
+def test_generate_sbom_merges_duplicate_components(tmp_path: Path) -> None:
+    direct_dependency = Dependency(
+        ecosystem="pypi",
+        name="demo",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path / "pyproject.toml",
+        metadata={"license": "MIT"},
+    )
+    indirect_dependency = Dependency(
+        ecosystem="pypi",
+        name="demo",
+        version="1.0.0",
+        direct=False,
+        manifest=tmp_path / "sub" / "pyproject.toml",
+        metadata={"license": {"id": "MIT"}},
+    )
+    findings = [
+        PackageFinding(dependency=direct_dependency),
+        PackageFinding(dependency=indirect_dependency),
+    ]
+    report = Report(
+        path=tmp_path,
+        managers=["pypi"],
+        findings=findings,
+        generated_at=datetime.utcnow(),
+    )
+    sbom = generate_sbom(report)
+    assert len(sbom["components"]) == 1
+    component = sbom["components"][0]
+    assert component["scope"] == "required"
+    assert component["licenses"] == [{"license": {"id": "MIT"}}]
+
+
+def test_generate_sbom_merges_vulnerabilities(tmp_path: Path) -> None:
+    dependency_a = Dependency(
+        ecosystem="pypi",
+        name="alpha",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path / "alpha",
+    )
+    dependency_b = Dependency(
+        ecosystem="npm",
+        name="beta",
+        version="2.0.0",
+        direct=False,
+        manifest=tmp_path / "beta",
+    )
+    advisory_low = Advisory(
+        identifier="OSV-1",
+        source="osv.dev",
+        severity=Severity.LOW,
+        summary="Initial",
+        references=["https://example.com/vuln", "https://example.com/vuln"],
+    )
+    advisory_high = Advisory(
+        identifier="OSV-1",
+        source="osv.dev",
+        severity=Severity.HIGH,
+        summary="Escalated",
+        references=["https://example.com/vuln", "https://mirror.example/vuln"],
+    )
+    findings = [
+        PackageFinding(dependency=dependency_a, advisories=[advisory_low]),
+        PackageFinding(dependency=dependency_b, advisories=[advisory_high]),
+    ]
+    report = Report(
+        path=tmp_path,
+        managers=["pypi", "npm"],
+        findings=findings,
+        generated_at=datetime.utcnow(),
+    )
+    sbom = generate_sbom(report)
+    vulnerabilities = sbom["vulnerabilities"]
+    assert len(vulnerabilities) == 1
+    entry = vulnerabilities[0]
+    assert entry["ratings"][0]["severity"] == Severity.HIGH.value
+    refs = [ref["url"] for ref in entry["references"]]
+    assert refs == ["https://example.com/vuln", "https://mirror.example/vuln"]
+    affects = [affect["ref"] for affect in entry["affects"]]
+    assert affects == [
+        "pkg:pypi/alpha@1.0.0",
+        "pkg:npm/beta@2.0.0",
+    ]
 
 
 def test_write_sbom_creates_parent_directories(tmp_path: Path) -> None:
