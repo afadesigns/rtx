@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 from rtx import config
 from rtx.metadata import MetadataClient, ReleaseMetadata
 from rtx.models import Advisory, Dependency, PackageFinding, Severity, TrustSignal
-from rtx.utils import load_json_resource
+from rtx.utils import load_json_resource, unique_preserving_order
 
 SEVERITY_SCORE = {
     Severity.NONE: 0.0,
@@ -18,21 +18,36 @@ SEVERITY_SCORE = {
 }
 
 
-def levenshtein(a: str, b: str) -> int:
+def levenshtein(a: str, b: str, *, max_distance: int | None = None) -> int:
+    if max_distance is not None and max_distance < 0:
+        raise ValueError("max_distance must be >= 0")
     if a == b:
         return 0
     if not a:
         return len(b)
     if not b:
         return len(a)
+    if max_distance is not None and abs(len(a) - len(b)) > max_distance:
+        return max_distance + 1
+    if len(a) > len(b):
+        a, b = b, a
     prev_row = list(range(len(b) + 1))
     for i, char_a in enumerate(a, start=1):
         row = [i]
+        min_in_row = row[0]
         for j, char_b in enumerate(b, start=1):
             cost = 0 if char_a == char_b else 1
-            row.append(min(row[-1] + 1, prev_row[j] + 1, prev_row[j - 1] + cost))
+            value = min(row[-1] + 1, prev_row[j] + 1, prev_row[j - 1] + cost)
+            row.append(value)
+            if value < min_in_row:
+                min_in_row = value
+        if max_distance is not None and min_in_row > max_distance:
+            return max_distance + 1
         prev_row = row
-    return prev_row[-1]
+    distance = prev_row[-1]
+    if max_distance is not None and distance > max_distance:
+        return max_distance + 1
+    return distance
 
 
 @dataclass
@@ -45,15 +60,30 @@ class TrustPolicyEngine:
     def __init__(self) -> None:
         top_packages_path = config.DATA_DIR / "top_packages.json"
         compromised_path = config.DATA_DIR / "compromised_maintainers.json"
-        self._top_packages: Dict[str, List[str]] = load_json_resource(top_packages_path)
+        raw_top_packages: Dict[str, List[str]] = load_json_resource(top_packages_path)
+        self._top_packages: Dict[str, List[str]] = {}
+        self._top_package_pairs: Dict[str, List[Tuple[str, str]]] = {}
+        for ecosystem, names in raw_top_packages.items():
+            if not isinstance(names, list):
+                continue
+            cleaned = unique_preserving_order(
+                [candidate.strip() for candidate in names if isinstance(candidate, str) and candidate.strip()],
+                key=str.casefold,
+            )
+            if not cleaned:
+                continue
+            self._top_packages[ecosystem] = cleaned
+            self._top_package_pairs[ecosystem] = [(name, name.casefold()) for name in cleaned]
         self._compromised = load_json_resource(compromised_path)
-        self._compromised_index: Dict[Tuple[str, str], Dict[str, str]] = {
-            (entry.get("ecosystem"), entry.get("package")): entry
-            for entry in self._compromised
-            if isinstance(entry, dict)
-            and entry.get("ecosystem")
-            and entry.get("package")
-        }
+        self._compromised_index: Dict[Tuple[str, str], Dict[str, str]] = {}
+        for entry in self._compromised:
+            if not isinstance(entry, dict):
+                continue
+            ecosystem = entry.get("ecosystem")
+            package = entry.get("package")
+            if not ecosystem or not package:
+                continue
+            self._compromised_index[(str(ecosystem).casefold(), str(package).casefold())] = entry
         self._metadata_client = MetadataClient()
 
     async def __aenter__(self) -> "TrustPolicyEngine":
@@ -151,7 +181,9 @@ class TrustPolicyEngine:
                 )
             )
         # Compromised maintainers dataset
-        compromised = self._compromised_index.get((dependency.ecosystem, dependency.name))
+        compromised = self._compromised_index.get(
+            (dependency.ecosystem.casefold(), dependency.name.casefold())
+        )
         if compromised:
             signals.append(
                 TrustSignal(
@@ -162,10 +194,12 @@ class TrustPolicyEngine:
                 )
             )
         # Typosquatting detection
-        baseline = self._top_packages.get(dependency.ecosystem, [])
-        for top_name in baseline:
-            distance = levenshtein(dependency.name.lower(), top_name.lower())
-            if distance == 1 and dependency.name.lower() != top_name.lower():
+        candidate = dependency.name.casefold()
+        for top_name, normalized in self._top_package_pairs.get(dependency.ecosystem, []):
+            if candidate == normalized:
+                continue
+            distance = levenshtein(candidate, normalized, max_distance=2)
+            if distance == 1:
                 signals.append(
                     TrustSignal(
                         category="typosquat",

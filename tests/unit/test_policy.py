@@ -33,6 +33,34 @@ async def test_typosquat_detection(monkeypatch, tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_typosquat_detection_ignores_identical_name_case(monkeypatch, tmp_path) -> None:
+    engine = TrustPolicyEngine()
+
+    async def fake_fetch(_dep: Dependency) -> ReleaseMetadata:
+        return ReleaseMetadata(
+            latest_release=datetime.utcnow(),
+            releases_last_30d=0,
+            total_releases=5,
+            maintainers=["alice"],
+            ecosystem="npm",
+        )
+
+    monkeypatch.setattr(engine._metadata_client, "fetch", fake_fetch)
+    dependency = Dependency(
+        ecosystem="npm",
+        name="React",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path,
+    )
+    try:
+        finding = await engine.analyze(dependency, [])
+        assert all(signal.category != "typosquat" for signal in finding.signals)
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
 async def test_advisory_influences_score(monkeypatch, tmp_path) -> None:
     engine = TrustPolicyEngine()
 
@@ -144,5 +172,34 @@ async def test_policy_flags_low_maturity(monkeypatch, tmp_path) -> None:
         finding = await engine.analyze(dependency, [])
         maturity_signal = next(signal for signal in finding.signals if signal.category == "maturity")
         assert maturity_signal.severity == Severity.LOW
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_compromised_detection_is_case_insensitive(monkeypatch, tmp_path) -> None:
+    engine = TrustPolicyEngine()
+
+    async def fake_fetch(_dep: Dependency) -> ReleaseMetadata:
+        return ReleaseMetadata(
+            latest_release=datetime.utcnow(),
+            releases_last_30d=0,
+            total_releases=10,
+            maintainers=["alice"],
+            ecosystem="npm",
+        )
+
+    monkeypatch.setattr(engine._metadata_client, "fetch", fake_fetch)
+    dependency = Dependency(
+        ecosystem="npm",
+        name="COA",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path,
+    )
+    try:
+        finding = await engine.analyze(dependency, [])
+        compromised = next(signal for signal in finding.signals if signal.category == "compromised-maintainer")
+        assert compromised.severity == Severity.CRITICAL
     finally:
         await engine.close()

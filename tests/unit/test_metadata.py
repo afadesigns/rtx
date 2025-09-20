@@ -36,13 +36,13 @@ async def test_clear_cache_resets_state(tmp_path: Path) -> None:
     client = MetadataClient()
     dependency = Dependency("pypi", "pkg", "1.0.0", True, tmp_path)
     metadata = ReleaseMetadata(None, 0, 0, [], "pypi")
-    client._cache[dependency.coordinate] = metadata
+    client._cache[client._cache_key(dependency)] = metadata
 
     async def pending() -> None:
         await asyncio.sleep(10)
 
     task = asyncio.create_task(pending())
-    client._inflight[dependency.coordinate] = task
+    client._inflight[client._cache_key(dependency)] = task
 
     try:
         await client.clear_cache(cancel_inflight=True)
@@ -91,6 +91,37 @@ async def test_fetch_caches_concurrent_requests(monkeypatch, tmp_path: Path) -> 
 
     assert calls == 1
     assert results[0] is results[1]
+
+
+@pytest.mark.asyncio
+async def test_fetch_reuses_cache_for_same_package(monkeypatch, tmp_path: Path) -> None:
+    client = MetadataClient()
+    calls = 0
+
+    async def fake_fetch(_dependency: Dependency) -> ReleaseMetadata:
+        nonlocal calls
+        calls += 1
+        return ReleaseMetadata(
+            latest_release=datetime.utcnow(),
+            releases_last_30d=0,
+            total_releases=1,
+            maintainers=["alice"],
+            ecosystem="pypi",
+        )
+
+    monkeypatch.setattr(client, "_fetch_uncached", fake_fetch)
+
+    dep_v1 = Dependency("pypi", "Requests", "2.31.0", True, tmp_path)
+    dep_v2 = Dependency("pypi", "requests", "2.32.0", True, tmp_path)
+
+    try:
+        first = await client.fetch(dep_v1)
+        second = await client.fetch(dep_v2)
+    finally:
+        await client.close()
+
+    assert calls == 1
+    assert first is second
 
 
 @pytest.mark.asyncio

@@ -132,7 +132,7 @@ class MetadataClient:
             self._inflight.clear()
 
     async def fetch(self, dependency: Dependency) -> ReleaseMetadata:
-        key = dependency.coordinate
+        key = self._cache_key(dependency)
         async with self._lock:
             cached = self._cache.get(key)
             if cached is not None:
@@ -151,6 +151,9 @@ class MetadataClient:
             self._cache[key] = result
             self._inflight.pop(key, None)
         return result
+
+    def _cache_key(self, dependency: Dependency) -> str:
+        return f"{dependency.ecosystem}:{dependency.name.casefold()}"
 
     async def _fetch_uncached(self, dependency: Dependency) -> ReleaseMetadata:
         fetcher = self._fetchers.get(dependency.ecosystem)
