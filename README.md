@@ -24,6 +24,8 @@ rtx pre-computes the blast radius of any change. It ingests manifests from Pytho
 pip install rtx-trust
 ```
 
+> Requires Python 3.10 – 3.14. Use a virtual environment or tools like `uv`/`pipx` to manage interpreter versions.
+
 ## Quickstart
 ```bash
 rtx scan --format table
