@@ -111,6 +111,23 @@ def test_scan_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, c
     assert "Unknown package manager(s): foo" in captured.out
 
 
+def test_scan_requires_output_for_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    report = _sample_report(exit_code=0)
+    monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
+    monkeypatch.setattr("rtx.reporting.render_table", lambda *_, **__: None, raising=False)
+    monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
+
+    exit_code = main(["scan", "--path", str(tmp_path), "--format", "json"])
+
+    captured = capsys.readouterr().out
+    assert exit_code == 2
+    assert "JSON output requires --output path" in captured
+
+
 def test_scan_signal_summary_flags(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -177,6 +194,24 @@ def test_report_renders_from_json(
     assert exit_code == 2
     assert captured["fmt"] == "json"
     assert Path(captured["output"]).name == "out.json"
+
+
+def test_report_requires_output_for_html(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    report = _sample_report(exit_code=0)
+    payload = report.to_dict()
+    payload["summary"]["generated_at"] = report.generated_at.isoformat()
+    report_file = tmp_path / "report.json"
+    report_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    exit_code = main(["report", str(report_file), "--format", "html"])
+
+    captured = capsys.readouterr().out
+    assert exit_code == 2
+    assert "HTML output requires --output path" in captured
 
 
 def test_report_signal_summary_flag(

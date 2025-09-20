@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -10,7 +10,7 @@ import httpx
 
 from rtx import config
 from rtx.models import Dependency
-from rtx.utils import AsyncRetry, unique_preserving_order
+from rtx.utils import AsyncRetry
 
 ISO_FORMATS = [
     "%Y-%m-%dT%H:%M:%S.%f%z",
@@ -45,6 +45,24 @@ def _parse_date(value: str | None) -> datetime | None:
         return _normalize_datetime(datetime.fromisoformat(trimmed))
     except ValueError:
         return None
+
+
+def _dedupe_names(candidates: Iterable[str | None]) -> list[str]:
+    """Return a case-insensitive, order-preserving list of maintainer names."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        cleaned = candidate.strip()
+        if not cleaned:
+            continue
+        marker = cleaned.casefold()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        result.append(cleaned)
+    return result
 
 
 @dataclass(slots=True)
@@ -231,7 +249,7 @@ class MetadataClient:
                     label = candidate.get("name")
                     if isinstance(label, str) and label.strip():
                         maintainer_names.append(label.strip())
-        maintainers = unique_preserving_order(maintainer_names, key=str.casefold)
+        maintainers = _dedupe_names(maintainer_names)
         return ReleaseMetadata(
             last_release,
             releases_last_30d,
@@ -264,7 +282,7 @@ class MetadataClient:
                     maintainer_candidates.append(label.strip())
             elif isinstance(author, str) and author.strip():
                 maintainer_candidates.append(author.strip())
-        maintainers = unique_preserving_order(maintainer_candidates, key=str.casefold)
+        maintainers = _dedupe_names(maintainer_candidates)
         last_release = None
         if isinstance(time_entries, dict):
             last_release = _parse_date(time_entries.get(dependency.version))
@@ -309,11 +327,10 @@ class MetadataClient:
                 releases_last_30d += 1
             if created and (not last_release or created > last_release):
                 last_release = created
-        maintainers = [
-            team.get("login")
+        maintainers = _dedupe_names(
+            team.get("login") if isinstance(team, dict) else None
             for team in data.get("teams", [])
-            if isinstance(team, dict) and team.get("login")
-        ]
+        )
         return ReleaseMetadata(
             last_release,
             releases_last_30d,
@@ -331,20 +348,37 @@ class MetadataClient:
         response.raise_for_status()
         versions = [line.strip() for line in response.text.splitlines() if line.strip()]
         total = len(versions)
+        if not versions:
+            return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
+
+        now = datetime.utcnow()
+        versions_to_check = versions[-10:]
+        semaphore = asyncio.Semaphore(min(5, len(versions_to_check)))
+
+        async def fetch_version(version: str) -> datetime | None:
+            async with semaphore:
+                info_resp = await self._client.get(
+                    f"https://proxy.golang.org/{module}/@v/{version}.info"
+                )
+            if info_resp.status_code != 200:
+                return None
+            info = info_resp.json()
+            return _parse_date(info.get("Time"))
+
+        release_times = await asyncio.gather(
+            *(fetch_version(version) for version in versions_to_check)
+        )
+
         last_release = None
         releases_last_30d = 0
-        now = datetime.utcnow()
-        for version in versions[-10:]:
-            info_resp = await self._client.get(f"https://proxy.golang.org/{module}/@v/{version}.info")
-            if info_resp.status_code != 200:
+        for released in release_times:
+            if not released:
                 continue
-            info = info_resp.json()
-            released = _parse_date(info.get("Time"))
-            if released:
-                if not last_release or released > last_release:
-                    last_release = released
-                if now - released <= timedelta(days=30):
-                    releases_last_30d += 1
+            if not last_release or released > last_release:
+                last_release = released
+            if now - released <= timedelta(days=30):
+                releases_last_30d += 1
+
         return ReleaseMetadata(last_release, releases_last_30d, total, [], dependency.ecosystem)
 
     async def _fetch_rubygems(self, dependency: Dependency) -> ReleaseMetadata:
@@ -380,7 +414,7 @@ class MetadataClient:
             details = detail_response.json()
             authors = details.get("authors")
             if isinstance(authors, str):
-                maintainers = [author.strip() for author in authors.split(",") if author.strip()]
+                maintainers = _dedupe_names(author for author in authors.split(","))
 
         return ReleaseMetadata(
             latest,

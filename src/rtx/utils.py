@@ -171,6 +171,7 @@ class Graph:
     def __init__(self) -> None:
         self._nodes: dict[str, dict[str, Any]] = {}
         self._edges: dict[str, list[str]] = defaultdict(list)
+        self._edge_count = 0
 
     def add_node(self, key: str, metadata: dict[str, Any]) -> None:
         node = self._nodes.setdefault(key, {})
@@ -179,6 +180,7 @@ class Graph:
     def add_edge(self, src: str, dest: str) -> None:
         if dest not in self._edges[src]:
             self._edges[src].append(dest)
+            self._edge_count += 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -193,4 +195,4 @@ class Graph:
         return len(self._nodes)
 
     def edge_count(self) -> int:
-        return sum(len(edges) for edges in self._edges.values())
+        return self._edge_count

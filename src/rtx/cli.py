@@ -23,6 +23,16 @@ def _configure_logging(level: str) -> None:
     )
 
 
+def _resolve_output_path(fmt: str, output: str | None) -> Path | None:
+    """Normalize CLI format/output combinations and enforce requirements."""
+    normalized = fmt.lower()
+    if normalized in {"json", "html"}:
+        if not output:
+            raise ReportRenderingError(f"{normalized.upper()} output requires --output path")
+        return Path(output)
+    return Path(output) if output else None
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     _configure_logging(args.log_level)
     from rtx.api import scan_project
@@ -42,13 +52,11 @@ def cmd_scan(args: argparse.Namespace) -> int:
         return 3
 
     try:
+        output_path = _resolve_output_path(fmt, args.output)
         if fmt == "table":
             render_table(report, console=console)
         else:
-            if not args.output:
-                console.print("[red]--output is required for json/html rendering[/red]")
-                return 2
-            render(report, fmt=fmt, output=Path(args.output))
+            render(report, fmt=fmt, output=output_path)
     except ReportRenderingError as exc:
         console.print(f"[red]Failed to render report:[/] {exc}")
         return 2
@@ -142,13 +150,15 @@ def cmd_report(args: argparse.Namespace) -> int:
         console.print(f"[red]Invalid report JSON:[/] {exc}")
         return 4
     report = _report_from_payload(payload)
-    if fmt == "table":
-        render_table(report, console=console)
-    else:
-        if not args.output:
-            console.print("[red]--output is required for json/html rendering[/red]")
-            return 2
-        render(report, fmt=fmt, output=Path(args.output))
+    try:
+        output_path = _resolve_output_path(fmt, args.output)
+        if fmt == "table":
+            render_table(report, console=console)
+        else:
+            render(report, fmt=fmt, output=output_path)
+    except ReportRenderingError as exc:
+        console.print(f"[red]Failed to render report:[/] {exc}")
+        return 2
     _handle_signal_summary(
         report,
         console=console,
