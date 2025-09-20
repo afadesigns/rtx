@@ -50,6 +50,16 @@ class Dependency:
     def coordinate(self) -> str:
         return f"{self.ecosystem}:{self.name}@{self.version}"
 
+    @property
+    def normalized_name(self) -> str:
+        """Case-insensitive identifier for cross-ecosystem lookups."""
+        return self.name.casefold()
+
+    @property
+    def normalized_ecosystem(self) -> str:
+        """Case-insensitive ecosystem key used for lookups."""
+        return self.ecosystem.casefold()
+
 
 @dataclass
 class Advisory:

@@ -3,16 +3,22 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from rtx.metadata import MetadataClient, ReleaseMetadata, _parse_date
 from rtx.models import Dependency
 
-try:
-    import httpx
-except ImportError:  # pragma: no cover - httpx is a runtime dependency
-    httpx = None
+httpx = pytest.importorskip("httpx")
+
+
+def json_response(payload: dict[str, Any], *, status_code: int = 200) -> httpx.Response:
+    return httpx.Response(status_code, json=payload)
+
+
+def text_response(content: str, *, status_code: int = 200) -> httpx.Response:
+    return httpx.Response(status_code, text=content)
 
 
 def test_parse_date_normalizes_timezone() -> None:
@@ -29,6 +35,12 @@ def test_parse_date_supports_fractional_and_z_suffix() -> None:
     assert parsed is not None
     assert parsed.microsecond == 123456
     assert parsed.tzinfo is None
+
+
+def test_release_metadata_uses_slots() -> None:
+    metadata = ReleaseMetadata(datetime.utcnow(), 1, 2, ["alice"], "pypi")
+    with pytest.raises(AttributeError):
+        metadata.extra = "value"  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -130,11 +142,10 @@ async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     now = datetime.utcnow()
     older = now - timedelta(days=1)
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
+    async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/json"):
-            return httpx.Response(
-                200,
-                json={
+            return json_response(
+                {
                     "info": {
                         "maintainers": [{"username": "alice"}, {"username": "ALICE"}],
                         "author": "bob",
@@ -142,11 +153,19 @@ async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                     "releases": {
                         "1.0.0": [
                             {"upload_time_iso_8601": older.isoformat(), "yanked": True},
-                            {"upload_time": now.replace(microsecond=0).isoformat() + "Z"},
+                            {
+                                "upload_time": now.replace(microsecond=0).isoformat() + "Z",
+                            },
                         ],
-                        "0.9.0": [{"upload_time_iso_8601": (now - timedelta(days=31)).isoformat()}],
+                        "0.9.0": [
+                            {
+                                "upload_time_iso_8601": (
+                                    now - timedelta(days=31)
+                                ).isoformat()
+                            }
+                        ],
                     },
-                },
+                }
             )
         return httpx.Response(404)
 
@@ -171,11 +190,10 @@ async def test_fetch_npm_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("npm", "demo", "1.0.0", True, tmp_path)
     now = datetime.utcnow().isoformat()
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
+    async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/demo"):
-            return httpx.Response(
-                200,
-                json={
+            return json_response(
+                {
                     "time": {
                         "created": "2020-01-01T00:00:00.000Z",
                         "modified": now,
@@ -184,7 +202,7 @@ async def test_fetch_npm_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                     },
                     "maintainers": [],
                     "author": {"name": "Acme Corp"},
-                },
+                }
             )
         return httpx.Response(404)
 
@@ -207,18 +225,21 @@ async def test_fetch_crates_parses_metadata(monkeypatch, tmp_path: Path) -> None
     dependency = Dependency("crates", "demo", "1.0.0", True, tmp_path)
     now = datetime.utcnow().isoformat()
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
+    async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/demo"):
-            return httpx.Response(
-                200,
-                json={
+            return json_response(
+                {
                     "crate": {"updated_at": now},
                     "versions": [
                         {"created_at": now},
-                        {"created_at": (datetime.utcnow() - timedelta(days=60)).isoformat()},
+                        {
+                            "created_at": (
+                                datetime.utcnow() - timedelta(days=60)
+                            ).isoformat()
+                        },
                     ],
                     "teams": [{"login": "team"}],
-                },
+                }
             )
         return httpx.Response(404)
 
@@ -243,14 +264,21 @@ async def test_fetch_gomod_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     now = datetime.utcnow().isoformat()
     requested = []
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
+    async def handler(request: httpx.Request) -> httpx.Response:
         requested.append(request.url.path)
-        if request.url.path.endswith("/list"):
-            return httpx.Response(200, text="v1.0.0\nv1.1.0\n")
-        if request.url.path.endswith("v1.1.0.info"):
-            return httpx.Response(200, json={"Time": now})
-        if request.url.path.endswith("v1.0.0.info"):
-            return httpx.Response(200, json={"Time": (datetime.utcnow() - timedelta(days=40)).isoformat()})
+        path = request.url.path
+        if path.endswith("/list"):
+            return text_response("v1.0.0\nv1.1.0\n")
+        if path.endswith("v1.1.0.info"):
+            return json_response({"Time": now})
+        if path.endswith("v1.0.0.info"):
+            return json_response(
+                {
+                    "Time": (
+                        datetime.utcnow() - timedelta(days=40)
+                    ).isoformat()
+                }
+            )
         return httpx.Response(404)
 
     client = MetadataClient()
@@ -274,17 +302,17 @@ async def test_fetch_rubygems_parses_metadata(monkeypatch, tmp_path: Path) -> No
     dependency = Dependency("rubygems", "demo", "1.0.0", True, tmp_path)
     now = datetime.utcnow()
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
-        if request.url.path.endswith("/versions/demo.json"):
-            return httpx.Response(
-                200,
-                json=[
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/versions/demo.json"):
+            return json_response(
+                [
                     {"created_at": now.isoformat()},
                     {"created_at": (now - timedelta(days=45)).isoformat()},
-                ],
+                ]
             )
-        if request.url.path.endswith("/gems/demo.json"):
-            return httpx.Response(200, json={"authors": "Alice, Bob"})
+        if path.endswith("/gems/demo.json"):
+            return json_response({"authors": "Alice, Bob"})
         return httpx.Response(404)
 
     client = MetadataClient()
@@ -309,11 +337,10 @@ async def test_fetch_maven_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     recent = int(now.timestamp() * 1000)
     older = int((now - timedelta(days=60)).timestamp() * 1000)
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
+    async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "search.maven.org":
-            return httpx.Response(
-                200,
-                json={
+            return json_response(
+                {
                     "response": {
                         "numFound": 2,
                         "docs": [
@@ -321,7 +348,7 @@ async def test_fetch_maven_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                             {"timestamp": older, "v": "1.0.0"},
                         ],
                     }
-                },
+                }
             )
         return httpx.Response(404)
 
@@ -345,11 +372,10 @@ async def test_fetch_nuget_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("nuget", "Demo.Package", "1.0.0", True, tmp_path)
     now = datetime.utcnow().isoformat()
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
+    async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.nuget.org":
-            return httpx.Response(
-                200,
-                json={
+            return json_response(
+                {
                     "items": [
                         {
                             "items": [
@@ -361,14 +387,16 @@ async def test_fetch_nuget_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                                 },
                                 {
                                     "catalogEntry": {
-                                        "published": (datetime.utcnow() - timedelta(days=45)).isoformat(),
+                                        "published": (
+                                            datetime.utcnow() - timedelta(days=45)
+                                        ).isoformat(),
                                         "authors": "Alice",
                                     }
                                 },
                             ]
                         }
                     ]
-                },
+                }
             )
         return httpx.Response(404)
 
@@ -392,11 +420,10 @@ async def test_fetch_packagist_parses_metadata(monkeypatch, tmp_path: Path) -> N
     dependency = Dependency("packagist", "vendor/demo", "1.0.0", True, tmp_path)
     now = datetime.utcnow().isoformat()
 
-    async def handler(request: "httpx.Request") -> "httpx.Response":
+    async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "repo.packagist.org":
-            return httpx.Response(
-                200,
-                json={
+            return json_response(
+                {
                     "package": {
                         "versions": {
                             "1.0.0": {
@@ -404,12 +431,14 @@ async def test_fetch_packagist_parses_metadata(monkeypatch, tmp_path: Path) -> N
                                 "authors": [{"name": "Alice"}, {"name": "Bob"}],
                             },
                             "0.9.0": {
-                                "time": (datetime.utcnow() - timedelta(days=90)).isoformat(),
+                                "time": (
+                                    datetime.utcnow() - timedelta(days=90)
+                                ).isoformat(),
                                 "authors": [{"name": "Alice"}],
                             },
                         }
                     }
-                },
+                }
             )
         return httpx.Response(404)
 
@@ -426,6 +455,8 @@ async def test_fetch_packagist_parses_metadata(monkeypatch, tmp_path: Path) -> N
     assert metadata.releases_last_30d == 1
     assert metadata.total_releases == 2
     assert metadata.maintainers == ["Alice", "Bob"]
+
+
 def test_release_metadata_helper_methods() -> None:
     latest = datetime(2025, 1, 1, 12, 0, 0)
     metadata = ReleaseMetadata(

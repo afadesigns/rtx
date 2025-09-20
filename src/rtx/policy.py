@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List, Tuple
 
 from rtx import config
 from rtx.metadata import MetadataClient, ReleaseMetadata
@@ -53,30 +51,35 @@ def levenshtein(a: str, b: str, *, max_distance: int | None = None) -> int:
 @dataclass
 class ThreatSignals:
     metadata: ReleaseMetadata
-    signals: List[TrustSignal]
+    signals: list[TrustSignal]
 
 
 class TrustPolicyEngine:
     def __init__(self) -> None:
         top_packages_path = config.DATA_DIR / "top_packages.json"
         compromised_path = config.DATA_DIR / "compromised_maintainers.json"
-        raw_top_packages: Dict[str, List[str]] = load_json_resource(top_packages_path)
-        self._top_packages: Dict[str, List[str]] = {}
-        self._top_package_pairs: Dict[str, List[Tuple[str, str]]] = {}
+        raw_top_packages: dict[str, list[str]] = load_json_resource(top_packages_path)
+        self._top_package_pairs: dict[str, list[tuple[str, str]]] = {}
         for ecosystem, names in raw_top_packages.items():
             if not isinstance(names, list):
                 continue
             cleaned = unique_preserving_order(
-                [candidate.strip() for candidate in names if isinstance(candidate, str) and candidate.strip()],
+                [
+                    candidate.strip()
+                    for candidate in names
+                    if isinstance(candidate, str) and candidate.strip()
+                ],
                 key=str.casefold,
             )
             if not cleaned:
                 continue
-            self._top_packages[ecosystem] = cleaned
-            self._top_package_pairs[ecosystem] = [(name, name.casefold()) for name in cleaned]
-        self._compromised = load_json_resource(compromised_path)
-        self._compromised_index: Dict[Tuple[str, str], Dict[str, str]] = {}
-        for entry in self._compromised:
+            normalized_ecosystem = str(ecosystem).casefold()
+            self._top_package_pairs[normalized_ecosystem] = [
+                (name, name.casefold()) for name in cleaned
+            ]
+        compromised_entries = load_json_resource(compromised_path)
+        self._compromised_index: dict[tuple[str, str], dict[str, str]] = {}
+        for entry in compromised_entries:
             if not isinstance(entry, dict):
                 continue
             ecosystem = entry.get("ecosystem")
@@ -86,13 +89,13 @@ class TrustPolicyEngine:
             self._compromised_index[(str(ecosystem).casefold(), str(package).casefold())] = entry
         self._metadata_client = MetadataClient()
 
-    async def __aenter__(self) -> "TrustPolicyEngine":
+    async def __aenter__(self) -> TrustPolicyEngine:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         await self.close()
 
-    async def analyze(self, dependency: Dependency, advisories: List[Advisory]) -> PackageFinding:
+    async def analyze(self, dependency: Dependency, advisories: list[Advisory]) -> PackageFinding:
         metadata = await self._metadata_client.fetch(dependency)
         signals = self._derive_signals(dependency, metadata)
         score = max((SEVERITY_SCORE[advisory.severity] for advisory in advisories), default=0.0)
@@ -106,8 +109,12 @@ class TrustPolicyEngine:
         )
         return finding
 
-    def _derive_signals(self, dependency: Dependency, metadata: ReleaseMetadata) -> List[TrustSignal]:
-        signals: List[TrustSignal] = []
+    def _derive_signals(
+        self,
+        dependency: Dependency,
+        metadata: ReleaseMetadata,
+    ) -> list[TrustSignal]:
+        signals: list[TrustSignal] = []
         if metadata.latest_release is None:
             signals.append(
                 TrustSignal(
@@ -119,15 +126,20 @@ class TrustPolicyEngine:
             )
         # Abandonment
         if metadata.is_abandoned():
+            evidence = {
+                "latest_release": (
+                    metadata.latest_release.isoformat()
+                    if metadata.latest_release
+                    else None
+                ),
+                "days_since_release": metadata.days_since_latest(),
+            }
             signals.append(
                 TrustSignal(
                     category="abandonment",
                     severity=Severity.HIGH,
                     message="No release in the last 18 months",
-                    evidence={
-                        "latest_release": metadata.latest_release.isoformat() if metadata.latest_release else None,
-                        "days_since_release": metadata.days_since_latest(),
-                    },
+                    evidence=evidence,
                 )
             )
         # Suspicious churn
@@ -181,9 +193,8 @@ class TrustPolicyEngine:
                 )
             )
         # Compromised maintainers dataset
-        compromised = self._compromised_index.get(
-            (dependency.ecosystem.casefold(), dependency.name.casefold())
-        )
+        ecosystem_key = dependency.normalized_ecosystem
+        compromised = self._compromised_index.get((ecosystem_key, dependency.normalized_name))
         if compromised:
             signals.append(
                 TrustSignal(
@@ -194,8 +205,8 @@ class TrustPolicyEngine:
                 )
             )
         # Typosquatting detection
-        candidate = dependency.name.casefold()
-        for top_name, normalized in self._top_package_pairs.get(dependency.ecosystem, []):
+        candidate = dependency.normalized_name
+        for top_name, normalized in self._top_package_pairs.get(ecosystem_key, []):
             if candidate == normalized:
                 continue
             distance = levenshtein(candidate, normalized, max_distance=2)

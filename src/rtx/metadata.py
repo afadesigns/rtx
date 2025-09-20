@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from typing import Awaitable, Callable, Dict, List, Optional
 
 import httpx
 
@@ -28,7 +28,7 @@ def _normalize_datetime(value: datetime) -> datetime:
 
 
 @lru_cache(maxsize=2048)
-def _parse_date(value: str | None) -> Optional[datetime]:
+def _parse_date(value: str | None) -> datetime | None:
     if value is None:
         return None
     trimmed = value.strip()
@@ -47,9 +47,9 @@ def _parse_date(value: str | None) -> Optional[datetime]:
         return None
 
 
-@dataclass
+@dataclass(slots=True)
 class ReleaseMetadata:
-    latest_release: Optional[datetime]
+    latest_release: datetime | None
     releases_last_30d: int
     total_releases: int
     maintainers: list[str]
@@ -88,7 +88,7 @@ class ReleaseMetadata:
             return False
         return self.total_releases < minimum_releases
 
-    def days_since_latest(self, *, now: Optional[datetime] = None) -> Optional[int]:
+    def days_since_latest(self, *, now: datetime | None = None) -> int | None:
         if not self.latest_release:
             return None
         reference = now or datetime.utcnow()
@@ -97,13 +97,18 @@ class ReleaseMetadata:
 
 
 class MetadataClient:
-    def __init__(self, *, timeout: float = config.HTTP_TIMEOUT, retries: int = config.HTTP_RETRIES) -> None:
+    def __init__(
+        self,
+        *,
+        timeout: float = config.HTTP_TIMEOUT,
+        retries: int = config.HTTP_RETRIES,
+    ) -> None:
         self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": config.USER_AGENT})
         self._retry = AsyncRetry(retries=retries, delay=0.5, exceptions=(httpx.HTTPError,))
-        self._cache: Dict[str, ReleaseMetadata] = {}
-        self._inflight: Dict[str, asyncio.Task[ReleaseMetadata]] = {}
+        self._cache: dict[str, ReleaseMetadata] = {}
+        self._inflight: dict[str, asyncio.Task[ReleaseMetadata]] = {}
         self._lock = asyncio.Lock()
-        self._fetchers: Dict[str, Callable[[Dependency], Awaitable[ReleaseMetadata]]] = {
+        self._fetchers: dict[str, Callable[[Dependency], Awaitable[ReleaseMetadata]]] = {
             "pypi": self._fetch_pypi,
             "npm": self._fetch_npm,
             "crates": self._fetch_crates,
@@ -114,7 +119,7 @@ class MetadataClient:
             "packagist": self._fetch_packagist,
         }
 
-    async def __aenter__(self) -> "MetadataClient":
+    async def __aenter__(self) -> MetadataClient:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -153,13 +158,19 @@ class MetadataClient:
         return result
 
     def _cache_key(self, dependency: Dependency) -> str:
-        return f"{dependency.ecosystem}:{dependency.name.casefold()}"
+        return f"{dependency.normalized_ecosystem}:{dependency.normalized_name}"
 
     async def _fetch_uncached(self, dependency: Dependency) -> ReleaseMetadata:
-        fetcher = self._fetchers.get(dependency.ecosystem)
+        fetcher = self._fetchers.get(dependency.normalized_ecosystem)
         if fetcher is not None:
             return await self._retry(lambda fetch=fetcher: fetch(dependency))
-        return ReleaseMetadata(latest_release=None, releases_last_30d=0, total_releases=0, maintainers=[], ecosystem=dependency.ecosystem)
+        return ReleaseMetadata(
+            latest_release=None,
+            releases_last_30d=0,
+            total_releases=0,
+            maintainers=[],
+            ecosystem=dependency.ecosystem,
+        )
 
     async def _fetch_pypi(self, dependency: Dependency) -> ReleaseMetadata:
         url = f"https://pypi.org/pypi/{dependency.name}/json"
@@ -173,7 +184,7 @@ class MetadataClient:
         releases_last_30d = 0
         now = datetime.utcnow()
         total = 0
-        for version, files in releases.items():
+        for _, files in releases.items():
             if not files:
                 continue
             upload_time = None
@@ -185,7 +196,10 @@ class MetadataClient:
                     if file_meta.get("yanked"):
                         continue
                     has_active_file = True
-                    timestamp = file_meta.get("upload_time_iso_8601") or file_meta.get("upload_time")
+                    timestamp = (
+                        file_meta.get("upload_time_iso_8601")
+                        or file_meta.get("upload_time")
+                    )
                     parsed = _parse_date(timestamp if isinstance(timestamp, str) else None)
                     if parsed is not None and (upload_time is None or parsed > upload_time):
                         upload_time = parsed
@@ -198,9 +212,9 @@ class MetadataClient:
                 releases_last_30d += 1
         info = data.get("info", {}) if isinstance(data, dict) else {}
         maintainer_entries = info.get("maintainers", []) if isinstance(info, dict) else []
-        maintainer_names: List[str] = []
+        maintainer_names: list[str] = []
         for entry in maintainer_entries:
-            name: Optional[str] = None
+            name: str | None = None
             if isinstance(entry, dict):
                 raw = entry.get("username") or entry.get("name")
                 if isinstance(raw, str):
@@ -218,7 +232,13 @@ class MetadataClient:
                     if isinstance(label, str) and label.strip():
                         maintainer_names.append(label.strip())
         maintainers = unique_preserving_order(maintainer_names, key=str.casefold)
-        return ReleaseMetadata(last_release, releases_last_30d, total, maintainers, dependency.ecosystem)
+        return ReleaseMetadata(
+            last_release,
+            releases_last_30d,
+            total,
+            maintainers,
+            dependency.ecosystem,
+        )
 
     async def _fetch_npm(self, dependency: Dependency) -> ReleaseMetadata:
         url = f"https://registry.npmjs.org/{dependency.name}"
@@ -228,7 +248,7 @@ class MetadataClient:
         response.raise_for_status()
         data = response.json()
         time_entries = data.get("time", {})
-        maintainer_candidates: List[str] = []
+        maintainer_candidates: list[str] = []
         for maintainer in data.get("maintainers", []) or []:
             if isinstance(maintainer, dict):
                 label = maintainer.get("name")
@@ -245,7 +265,9 @@ class MetadataClient:
             elif isinstance(author, str) and author.strip():
                 maintainer_candidates.append(author.strip())
         maintainers = unique_preserving_order(maintainer_candidates, key=str.casefold)
-        last_release = _parse_date(time_entries.get(dependency.version)) if isinstance(time_entries, dict) else None
+        last_release = None
+        if isinstance(time_entries, dict):
+            last_release = _parse_date(time_entries.get(dependency.version))
         now = datetime.utcnow()
         releases_last_30d = 0
         total = 0
@@ -260,7 +282,13 @@ class MetadataClient:
                         releases_last_30d += 1
                     if not last_release or release_time > last_release:
                         last_release = release_time
-        return ReleaseMetadata(last_release, releases_last_30d, total, maintainers, dependency.ecosystem)
+        return ReleaseMetadata(
+            last_release,
+            releases_last_30d,
+            total,
+            maintainers,
+            dependency.ecosystem,
+        )
 
     async def _fetch_crates(self, dependency: Dependency) -> ReleaseMetadata:
         url = f"https://crates.io/api/v1/crates/{dependency.name}"
@@ -281,8 +309,18 @@ class MetadataClient:
                 releases_last_30d += 1
             if created and (not last_release or created > last_release):
                 last_release = created
-        maintainers = [team.get("login") for team in data.get("teams", []) if isinstance(team, dict) and team.get("login")]
-        return ReleaseMetadata(last_release, releases_last_30d, total, maintainers, dependency.ecosystem)
+        maintainers = [
+            team.get("login")
+            for team in data.get("teams", [])
+            if isinstance(team, dict) and team.get("login")
+        ]
+        return ReleaseMetadata(
+            last_release,
+            releases_last_30d,
+            total,
+            maintainers,
+            dependency.ecosystem,
+        )
 
     async def _fetch_gomod(self, dependency: Dependency) -> ReleaseMetadata:
         module = dependency.name
@@ -344,7 +382,13 @@ class MetadataClient:
             if isinstance(authors, str):
                 maintainers = [author.strip() for author in authors.split(",") if author.strip()]
 
-        return ReleaseMetadata(latest, releases_last_30d, total, maintainers, dependency.ecosystem)
+        return ReleaseMetadata(
+            latest,
+            releases_last_30d,
+            total,
+            maintainers,
+            dependency.ecosystem,
+        )
 
     async def _fetch_maven(self, dependency: Dependency) -> ReleaseMetadata:
         if ":" not in dependency.name:
@@ -357,7 +401,10 @@ class MetadataClient:
             "wt": "json",
             "sort": "timestamp desc",
         }
-        response = await self._client.get("https://search.maven.org/solrsearch/select", params=params)
+        response = await self._client.get(
+            "https://search.maven.org/solrsearch/select",
+            params=params,
+        )
         if response.status_code == 404:
             return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
         response.raise_for_status()
@@ -374,8 +421,11 @@ class MetadataClient:
                 continue
             timestamp = doc.get("timestamp")
             created: datetime | None
-            if isinstance(timestamp, (int, float)):
-                created = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).replace(tzinfo=None)
+            if isinstance(timestamp, int | float):
+                created = datetime.fromtimestamp(
+                    timestamp / 1000,
+                    tz=timezone.utc,
+                ).replace(tzinfo=None)
             elif isinstance(timestamp, str):
                 created = _parse_date(timestamp)
             else:
@@ -394,7 +444,7 @@ class MetadataClient:
         return ReleaseMetadata(latest, releases_last_30d, total, [], dependency.ecosystem)
 
     async def _fetch_nuget(self, dependency: Dependency) -> ReleaseMetadata:
-        package_id = dependency.name.lower()
+        package_id = dependency.normalized_name
         url = f"https://api.nuget.org/v3/registration5-semver1/{package_id}/index.json"
         response = await self._client.get(url)
         if response.status_code == 404:
@@ -425,7 +475,11 @@ class MetadataClient:
                     releases_last_30d += 1
                 authors = catalog.get("authors")
                 if isinstance(authors, str):
-                    maintainers.extend(author.strip() for author in authors.split(",") if author.strip())
+                    maintainers.extend(
+                        author.strip()
+                        for author in authors.split(",")
+                        if author.strip()
+                    )
         maintainers = sorted({name for name in maintainers if name})
         return ReleaseMetadata(latest, releases_last_30d, total, maintainers, dependency.ecosystem)
 
