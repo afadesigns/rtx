@@ -156,9 +156,7 @@ def test_has_matching_file_handles_literal_path(tmp_path: Path) -> None:
 
 def test_has_matching_file_handles_glob_patterns(tmp_path: Path) -> None:
     (tmp_path / "nested").mkdir()
-    (tmp_path / "nested" / "requirements.txt").write_text(
-        "requests==2.31.0", encoding="utf-8"
-    )
+    (tmp_path / "nested" / "requirements.txt").write_text("requests==2.31.0", encoding="utf-8")
     assert has_matching_file(tmp_path, ["nested/*.txt"]) is True
     assert has_matching_file(tmp_path, ["*.lock"]) is False
 
@@ -246,3 +244,31 @@ packages:
 
     result = common.read_pnpm_lock(pnpm_lock)
     assert result == {"@scope/other": "2.0.0", "react": "18.2.0"}
+
+
+def test_merge_dependency_version_prefers_specific_specifiers() -> None:
+    store: dict[str, str] = {}
+    assert common.merge_dependency_version(store, "pkg", "*") is True
+    assert store["pkg"] == "*"
+    assert common.merge_dependency_version(store, "pkg", "==1.0.0") is True
+    assert store["pkg"] == "==1.0.0"
+    assert common.merge_dependency_version(store, "pkg", ">=0.9.0") is False
+    assert store["pkg"] == "==1.0.0"
+
+
+def test_read_requirements_follows_include_directives(tmp_path: Path) -> None:
+    root = tmp_path / "reqs"
+    root.mkdir()
+    (root / "requirements.txt").write_text(
+        """
+        requests==2.31.0
+        -r extras.txt
+        """,
+        encoding="utf-8",
+    )
+    (root / "extras.txt").write_text("rich>=13.0.0", encoding="utf-8")
+
+    result = common.read_requirements(root / "requirements.txt")
+
+    assert result["requests"] == "2.31.0"
+    assert result["rich"] == ">=13.0.0"

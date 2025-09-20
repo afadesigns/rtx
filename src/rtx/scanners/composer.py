@@ -21,6 +21,34 @@ class ComposerScanner(BaseScanner):
         direct_scopes: dict[str, str] = {}
 
         composer_json = root / "composer.json"
+
+        def merge(
+            name: str,
+            version: str,
+            source: Path,
+            *,
+            direct: bool,
+            scope: str,
+            is_dev: bool,
+        ) -> None:
+            updated = common.merge_dependency_version(dependencies, name, version)
+            if updated or name not in origins:
+                origins[name] = source
+            if direct:
+                direct_flags[name] = True
+                direct_scopes[name] = scope
+            else:
+                direct_flags.setdefault(name, False)
+            metadata = metadata_map.setdefault(name, {})
+            if direct:
+                metadata["scope"] = scope
+                if is_dev:
+                    metadata["dev"] = True
+            else:
+                metadata.setdefault("scope", scope)
+            metadata.setdefault("dev", is_dev and direct)
+            metadata["source"] = origins[name].name
+
         if composer_json.exists():
             raw_data = common.read_json(composer_json)
             data = raw_data if isinstance(raw_data, dict) else {}
@@ -33,14 +61,14 @@ class ComposerScanner(BaseScanner):
                 for name, version in section_data.items():
                     if not isinstance(name, str):
                         continue
-                    dependencies.setdefault(name, str(version))
-                    origins.setdefault(name, composer_json)
-                    direct_flags.setdefault(name, True)
-                    direct_scopes[name] = scope
-                    metadata = metadata_map.setdefault(name, {})
-                    metadata.setdefault("scope", scope)
-                    metadata.setdefault("dev", is_dev)
-                    metadata.setdefault("source", composer_json.name)
+                    merge(
+                        name,
+                        str(version),
+                        composer_json,
+                        direct=True,
+                        scope=scope,
+                        is_dev=is_dev,
+                    )
 
         composer_lock = root / "composer.lock"
         if composer_lock.exists():
@@ -48,15 +76,14 @@ class ComposerScanner(BaseScanner):
             for name, version in locked.items():
                 if not isinstance(name, str):
                     continue
-                dependencies[name] = version
-                origins[name] = composer_lock
-                metadata = metadata_map.setdefault(name, {})
-                metadata["source"] = composer_lock.name
-                scope = direct_scopes.get(name)
-                if scope is None:
-                    metadata.setdefault("scope", "transitive")
-                    metadata.setdefault("dev", False)
-                direct_flags[name] = scope is not None
+                merge(
+                    name,
+                    version,
+                    composer_lock,
+                    direct=direct_scopes.get(name) is not None,
+                    scope=direct_scopes.get(name, "transitive"),
+                    is_dev=bool(metadata_map.get(name, {}).get("dev")),
+                )
 
         return [
             self._dependency(
@@ -64,9 +91,7 @@ class ComposerScanner(BaseScanner):
                 version=common.normalize_version(version),
                 manifest=origins.get(name, root),
                 direct=direct_flags.get(name, False),
-                metadata=metadata_map.get(
-                    name, {"source": origins.get(name, root).name}
-                ),
+                metadata=metadata_map.get(name, {"source": origins.get(name, root).name}),
             )
             for name, version in sorted(dependencies.items())
         ]

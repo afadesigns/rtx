@@ -21,6 +21,7 @@ __all__ = [
     "read_toml",
     "read_yaml",
     "read_json",
+    "merge_dependency_version",
 ]
 
 _INLINE_COMMENT_PATTERN = re.compile(r"\s+#.*$")
@@ -67,13 +68,11 @@ def _parse_requirement_lines(lines: Iterable[str]) -> dict[str, str]:
         if parsed is None:
             continue
         name, version = parsed
-        existing = resolved.get(name)
-        if existing is None or _is_more_specific(version, existing):
-            resolved[name] = version
+        merge_dependency_version(resolved, name, version)
     return resolved
 
 
-_SPECIFICITY_TOKENS = frozenset("<>=!~")
+_SPECIFICITY_TOKENS = frozenset("<>=!~^")
 
 
 def _is_more_specific(candidate: str, baseline: str) -> bool:
@@ -91,6 +90,43 @@ def _specificity_rank(specifier: str) -> int:
             return 4
         return 2
     return 4 if normalized else 0
+
+
+def _normalize_specifier(specifier: str | None) -> str:
+    if specifier is None:
+        return "*"
+    cleaned = specifier.strip()
+    return cleaned or "*"
+
+
+def merge_dependency_version(store: dict[str, str], name: str, candidate: str) -> bool:
+    """Merge ``candidate`` into ``store`` ensuring the most specific specifier wins.
+
+    Returns ``True`` when the stored version changed (including initial insert).
+    """
+
+    normalized_candidate = _normalize_specifier(candidate)
+    existing = store.get(name)
+    if existing is None:
+        store[name] = normalized_candidate
+        return True
+
+    normalized_existing = _normalize_specifier(existing)
+    if normalized_candidate == normalized_existing:
+        return False
+
+    if _is_more_specific(normalized_candidate, normalized_existing):
+        store[name] = normalized_candidate
+        return True
+
+    if _is_more_specific(normalized_existing, normalized_candidate):
+        return False
+
+    if normalized_existing in {"*", ""} and normalized_candidate not in {"*", ""}:
+        store[name] = normalized_candidate
+        return True
+
+    return False
 
 
 def _parse_conda_dependency(entry: str) -> tuple[str, str] | None:
@@ -325,7 +361,7 @@ def read_pnpm_lock(path: Path) -> dict[str, str]:
                 raw_version = info
             version = _clean_pnpm_version(raw_version)
             if version:
-                direct.setdefault(name, version)
+                merge_dependency_version(direct, name, version)
 
     importers = data.get("importers", {})
     if isinstance(importers, dict):
@@ -348,18 +384,84 @@ def read_pnpm_lock(path: Path) -> dict[str, str]:
             for key, meta in packages.items():
                 name, version = _parse_pnpm_package_key(key)
                 if name and version:
-                    direct.setdefault(name, version)
+                    merge_dependency_version(direct, name, version)
                 if isinstance(meta, dict):
                     meta_name = meta.get("name")
                     meta_version = _clean_pnpm_version(meta.get("version"))
                     if isinstance(meta_name, str) and meta_version:
-                        direct.setdefault(meta_name, meta_version)
+                        merge_dependency_version(direct, meta_name, meta_version)
 
     return direct
 
 
-def read_requirements(path: Path) -> dict[str, str]:
-    return _parse_requirement_lines(path.read_text(encoding="utf-8").splitlines())
+_INCLUDE_FLAGS = {
+    "-r",
+    "--requirement",
+    "-c",
+    "--constraint",
+}
+
+
+def _extract_include_targets(tokens: list[str]) -> list[str]:
+    targets: list[str] = []
+    index = 0
+    length = len(tokens)
+    while index < length:
+        token = tokens[index]
+        if token in _INCLUDE_FLAGS:
+            if index + 1 < length:
+                targets.append(tokens[index + 1])
+            index += 2
+            continue
+        if token.startswith("--requirement=") or token.startswith("--constraint="):
+            _, value = token.split("=", 1)
+            if value:
+                targets.append(value)
+        index += 1
+    return targets
+
+
+def read_requirements(path: Path, *, _seen: set[Path] | None = None) -> dict[str, str]:
+    if _seen is None:
+        _seen = set()
+    resolved: dict[str, str] = {}
+    absolute_path = path.resolve()
+    if absolute_path in _seen:
+        return resolved
+    _seen.add(absolute_path)
+
+    raw_lines = path.read_text(encoding="utf-8").splitlines()
+    direct_lines: list[str] = []
+
+    for raw_line in raw_lines:
+        stripped = raw_line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            direct_lines.append(raw_line)
+            continue
+
+        cleaned = _strip_inline_comment(raw_line)
+        try:
+            tokens = shlex.split(cleaned) if cleaned else []
+        except ValueError:
+            tokens = []
+
+        targets = _extract_include_targets(tokens)
+        if targets:
+            for target in targets:
+                candidate = (absolute_path.parent / target).resolve()
+                if not candidate.exists():
+                    continue
+                nested = read_requirements(candidate, _seen=_seen)
+                for name, version in nested.items():
+                    merge_dependency_version(resolved, name, version)
+            continue
+
+        direct_lines.append(raw_line)
+
+    for name, version in _parse_requirement_lines(direct_lines).items():
+        merge_dependency_version(resolved, name, version)
+
+    return resolved
 
 
 def read_gemfile_lock(path: Path) -> dict[str, str]:
@@ -489,9 +591,7 @@ def read_packages_lock(path: Path) -> dict[str, str]:
             if isinstance(info, dict) and "resolved" in info:
                 version = info.get("resolved", "0.0.0")
             else:
-                version = (
-                    info.get("version", "0.0.0") if isinstance(info, dict) else "0.0.0"
-                )
+                version = info.get("version", "0.0.0") if isinstance(info, dict) else "0.0.0"
             out[name] = version
     return out
 

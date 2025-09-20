@@ -47,6 +47,100 @@ def test_pypi_scanner_prefers_poetry_dep_versions(tmp_path: Path) -> None:
     assert any(dep.name == "requests" and dep.version == "2.31.0" for dep in packages)
 
 
+def test_pypi_scanner_marks_lock_only_dependencies_indirect(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "poetry.lock").write_text(
+        textwrap.dedent(
+            """
+            [[package]]
+            name = "rich"
+            version = "13.7.1"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = PyPIScanner()
+    packages = {dep.name: dep for dep in scanner.scan(project)}
+
+    rich = packages["rich"]
+    assert rich.direct is False
+    assert rich.metadata["scope"] == "transitive"
+
+
+def test_pypi_scanner_handles_optional_dependencies(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        textwrap.dedent(
+            """
+            [project]
+            name = "demo"
+            version = "0.1.0"
+            dependencies = ["httpx>=0.27"]
+            optional-dependencies = { docs = ["sphinx==7.0"] }
+
+            [tool.poetry.dependencies]
+            python = "^3.11"
+            httpx = "^0.27"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = PyPIScanner()
+    packages = {dep.name: dep for dep in scanner.scan(project)}
+
+    assert "python" not in packages
+
+    httpx = packages["httpx"]
+    assert httpx.direct is True
+    assert httpx.metadata["scope"] == "production"
+
+    sphinx = packages["sphinx"]
+    assert sphinx.direct is True
+    assert sphinx.metadata["optional"] is True
+    assert sphinx.metadata["scope"] == "optional:docs"
+    assert sphinx.metadata["extras"] == ["docs"]
+
+
+def test_pypi_scanner_reads_poetry_groups(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        textwrap.dedent(
+            """
+            [project]
+            name = "demo"
+            version = "0.1.0"
+
+            [tool.poetry.group.dev.dependencies]
+            pytest = "^7.0"
+
+            [tool.poetry.group.docs.dependencies]
+            mkdocs = "^1.5"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = PyPIScanner()
+    packages = {dep.name: dep for dep in scanner.scan(project)}
+
+    pytest_dep = packages["pytest"]
+    assert pytest_dep.direct is True
+    assert pytest_dep.metadata["scope"] == "development"
+    assert pytest_dep.metadata["optional"] is True
+    assert pytest_dep.metadata["extras"] == ["dev"]
+
+    mkdocs = packages["mkdocs"]
+    assert mkdocs.direct is True
+    assert mkdocs.metadata["scope"] == "group:docs"
+    assert mkdocs.metadata["optional"] is True
+    assert mkdocs.metadata["extras"] == ["docs"]
+
+
 def test_npm_scanner_reads_package_lock(tmp_path: Path) -> None:
     project = tmp_path / "demo"
     project.mkdir()
@@ -94,6 +188,61 @@ def test_npm_scanner_prefers_lockfile_versions(tmp_path: Path) -> None:
     dependency = packages[0]
     assert dependency.version == "4.17.21"
     assert dependency.metadata["source"] == "package-lock.json"
+
+
+def test_npm_scanner_marks_transitive_dependencies(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "package.json").write_text(
+        """{"dependencies": {"lodash": "^4.17.21"}}""",
+        encoding="utf-8",
+    )
+    (project / "package-lock.json").write_text(
+        textwrap.dedent(
+            """
+            {
+              "packages": {
+                "": {
+                  "dependencies": {
+                    "lodash": "^4.17.21"
+                  }
+                },
+                "node_modules/lodash": {"version": "4.17.21"},
+                "node_modules/chalk": {"version": "5.0.0"}
+              }
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = NpmScanner()
+    results = {dep.name: dep for dep in scanner.scan(project)}
+
+    lodash = results["lodash"]
+    assert lodash.direct is True
+    assert lodash.metadata["scope"] == "production"
+    assert lodash.metadata["source"] == "package-lock.json"
+
+    chalk = results["chalk"]
+    assert chalk.direct is False
+    assert chalk.metadata["scope"] == "transitive"
+    assert chalk.metadata["source"] == "package-lock.json"
+
+
+def test_npm_scanner_preserves_range_specifiers(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "package.json").write_text(
+        """{"dependencies": {"leftpad": ">=1.2.3"}}""",
+        encoding="utf-8",
+    )
+
+    scanner = NpmScanner()
+    packages = scanner.scan(project)
+
+    assert packages[0].version == ">=1.2.3"
+    assert packages[0].metadata["source"] == "package.json"
 
 
 def test_get_scanners_unknown() -> None:
