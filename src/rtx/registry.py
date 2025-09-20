@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, List, Type
-
 from rtx.scanners import (
     BaseScanner,
     BrewScanner,
@@ -16,10 +14,9 @@ from rtx.scanners import (
     PyPIScanner,
     RubyGemsScanner,
 )
-
 from rtx.utils import unique_preserving_order
 
-SCANNER_CLASSES: Dict[str, Type[BaseScanner]] = {
+SCANNER_CLASSES: dict[str, type[BaseScanner]] = {
     "npm": NpmScanner,
     "pypi": PyPIScanner,
     "maven": MavenScanner,
@@ -34,14 +31,15 @@ SCANNER_CLASSES: Dict[str, Type[BaseScanner]] = {
 }
 
 
-def get_scanners(names: List[str] | None = None) -> List[BaseScanner]:
-    if names is None:
-        selected = list(SCANNER_CLASSES.keys())
-    else:
-        selected = unique_preserving_order(names, key=str.casefold)
+def get_scanners(names: list[str] | None = None) -> list[BaseScanner]:
+    selected = (
+        list(SCANNER_CLASSES.keys())
+        if names is None
+        else unique_preserving_order(names, key=str.casefold)
+    )
 
-    scanners: List[BaseScanner] = []
-    unknown: List[str] = []
+    scanners: list[BaseScanner] = []
+    unknown: list[str] = []
     seen: set[str] = set()
     for raw_name in selected:
         normalized = raw_name.casefold()

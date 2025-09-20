@@ -1,34 +1,41 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import ClassVar
 
 from rtx.models import Dependency
 from rtx.scanners import common
 from rtx.scanners.base import BaseScanner
-from rtx.utils import read_json, read_yaml
+from rtx.utils import read_json
 
 
 class NpmScanner(BaseScanner):
-    manager = "npm"
-    manifests = ["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"]
-    ecosystem = "npm"
+    manager: ClassVar[str] = "npm"
+    manifests: ClassVar[list[str]] = [
+        "package.json",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+    ]
+    ecosystem: ClassVar[str] = "npm"
 
-    def scan(self, root: Path) -> List[Dependency]:
-        dependencies: Dict[str, str] = {}
-        origins: Dict[str, Path] = {}
+    def scan(self, root: Path) -> list[Dependency]:
+        dependencies: dict[str, str] = {}
+        origins: dict[str, Path] = {}
+
+        def record(name: str, version: str, source: Path) -> None:
+            dependencies.setdefault(name, version)
+            origins.setdefault(name, source)
 
         package_lock = root / "package-lock.json"
         if package_lock.exists():
             for name, version in common.load_lock_dependencies(package_lock).items():
-                dependencies.setdefault(name, version)
-                origins.setdefault(name, package_lock)
+                record(name, version, package_lock)
 
         pnpm_lock = root / "pnpm-lock.yaml"
         if pnpm_lock.exists():
             for name, version in common.read_pnpm_lock(pnpm_lock).items():
-                dependencies.setdefault(name, version)
-                origins.setdefault(name, pnpm_lock)
+                record(name, version, pnpm_lock)
 
         yarn_lock = root / "yarn.lock"
         if yarn_lock.exists():
@@ -45,21 +52,24 @@ class NpmScanner(BaseScanner):
                         current_name = segment.split("@", 1)[0]
                 elif current_name and line.strip().startswith("version "):
                     version = line.split("\"", 2)[1]
-                    dependencies.setdefault(current_name, version)
-                    origins.setdefault(current_name, yarn_lock)
+                    record(current_name, version, yarn_lock)
 
         package_json = root / "package.json"
         if package_json.exists():
             data = read_json(package_json)
-            for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
+            for section in (
+                "dependencies",
+                "devDependencies",
+                "optionalDependencies",
+                "peerDependencies",
+            ):
                 section_data = data.get(section, {})
                 if isinstance(section_data, dict):
                     for name, spec in section_data.items():
                         version = str(spec)
-                        dependencies.setdefault(name, version)
-                        origins.setdefault(name, package_json)
+                        record(name, version, package_json)
 
-        results: List[Dependency] = []
+        results: list[Dependency] = []
         for name, version in sorted(dependencies.items()):
             results.append(
                 self._dependency(

@@ -37,7 +37,7 @@ def test_generate_sbom_includes_project_version_and_license(tmp_path: Path) -> N
         version="1.0.0",
         direct=False,
         manifest=tmp_path,
-        metadata={"license": ["MIT", "Apache-2.0"]},
+        metadata={"license": {"MIT", "Apache-2.0"}},
     )
     report = Report(
         path=tmp_path,
@@ -105,14 +105,19 @@ def test_generate_sbom_merges_vulnerabilities(tmp_path: Path) -> None:
         source="osv.dev",
         severity=Severity.LOW,
         summary="Initial",
-        references=["https://example.com/vuln", "https://example.com/vuln"],
+        references=[
+            " https://example.com/vuln ",
+            "https://example.com/vuln",
+            "",
+            "\t",
+        ],
     )
     advisory_high = Advisory(
         identifier="OSV-1",
         source="osv.dev",
         severity=Severity.HIGH,
         summary="Escalated",
-        references=["https://example.com/vuln", "https://mirror.example/vuln"],
+        references=["https://example.com/vuln", "https://mirror.example/vuln", None],
     )
     findings = [
         PackageFinding(dependency=dependency_a, advisories=[advisory_low]),

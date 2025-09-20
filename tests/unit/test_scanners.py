@@ -42,6 +42,35 @@ def test_npm_scanner_reads_package_lock(tmp_path: Path) -> None:
     assert packages[0].name == "lodash"
 
 
+def test_npm_scanner_prefers_lockfile_versions(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "package-lock.json").write_text(
+        textwrap.dedent(
+            """
+            {
+              "packages": {
+                "node_modules/lodash": {"version": "4.17.21"}
+              }
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "package.json").write_text(
+        """{"dependencies": {"lodash": "^5.0.0"}}""",
+        encoding="utf-8",
+    )
+
+    scanner = NpmScanner()
+    packages = scanner.scan(project)
+
+    assert len(packages) == 1
+    dependency = packages[0]
+    assert dependency.version == "4.17.21"
+    assert dependency.metadata["source"] == "package-lock.json"
+
+
 def test_get_scanners_unknown() -> None:
     with pytest.raises(ValueError, match="Unknown package manager"):
         get_scanners(["does-not-exist"])

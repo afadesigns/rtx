@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
@@ -17,7 +17,7 @@ from rtx.utils import Graph, unique_preserving_order
 
 def _merge_dependency(existing: Dependency, new: Dependency) -> Dependency:
     combined_metadata = {**existing.metadata, **new.metadata}
-    manifests: List[str] = [str(existing.manifest), str(new.manifest)]
+    manifests: list[str] = [str(existing.manifest), str(new.manifest)]
     previous = combined_metadata.get("manifests")
     if isinstance(previous, Sequence) and not isinstance(previous, str):
         manifests.extend(str(value) for value in previous)
@@ -34,11 +34,11 @@ def _merge_dependency(existing: Dependency, new: Dependency) -> Dependency:
     )
 
 
-async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None) -> Report:
+async def scan_project_async(path: Path, *, managers: list[str] | None = None) -> Report:
     root = path.resolve()
     scanners = get_scanners(managers)
-    discovered = []
-    used_managers: List[str] = []
+    discovered: list[Dependency] = []
+    used_managers: list[str] = []
     for scanner in scanners:
         if managers is None and not scanner.matches(root):
             continue
@@ -49,13 +49,13 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
     if not discovered:
         raise ManifestNotFound("No supported manifests found")
 
-    unique_deps: Dict[str, Dependency] = {}
+    unique_deps: dict[str, Dependency] = {}
     for dep in discovered:
         existing = unique_deps.get(dep.coordinate)
         if existing is None:
             unique_deps[dep.coordinate] = dep
-            continue
-        unique_deps[dep.coordinate] = _merge_dependency(existing, dep)
+        else:
+            unique_deps[dep.coordinate] = _merge_dependency(existing, dep)
     dependencies = list(unique_deps.values())
 
     async with AdvisoryClient() as advisory_client:
@@ -72,8 +72,9 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
                     dep, advisory_map.get(dep.coordinate, [])
                 )
 
-        if hasattr(asyncio, "TaskGroup"):
-            async with asyncio.TaskGroup() as tg:
+        task_group = getattr(asyncio, "TaskGroup", None)
+        if task_group is not None:
+            async with task_group() as tg:  # type: ignore[operator]
                 for index, dep in enumerate(dependencies):
                     tg.create_task(analyze_with_limit(index, dep))
         else:
@@ -81,7 +82,7 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
                 *(analyze_with_limit(index, dep) for index, dep in enumerate(dependencies))
             )
 
-    findings: List[PackageFinding] = [finding for finding in findings_buffer if finding is not None]
+    findings: list[PackageFinding] = [finding for finding in findings_buffer if finding is not None]
 
     graph = Graph()
     for finding in findings:
@@ -97,7 +98,7 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
     direct_count = sum(1 for finding in findings if finding.dependency.direct)
     manager_usage = Counter(finding.dependency.ecosystem for finding in findings)
 
-    manager_list: List[str]
+    manager_list: list[str]
     if used_managers:
         manager_list = unique_preserving_order(used_managers, key=str.casefold)
     elif managers:
@@ -122,5 +123,5 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
     return report
 
 
-def scan_project(path: Path, managers: Optional[List[str]] = None) -> Report:
+def scan_project(path: Path, managers: list[str] | None = None) -> Report:
     return asyncio.run(scan_project_async(path, managers=managers))

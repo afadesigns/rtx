@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from rtx import __version__
-from rtx.models import PackageFinding, Report, SEVERITY_RANK
+from rtx.models import SEVERITY_RANK, PackageFinding, Report
 from rtx.utils import unique_preserving_order
 
 PURL_ECOSYSTEMS = {
@@ -32,9 +33,9 @@ def _purl(finding: PackageFinding) -> str:
     return f"pkg:{ecosystem}/{finding.dependency.name}@{finding.dependency.version}"
 
 
-def generate_sbom(report: Report) -> Dict[str, object]:
-    component_index: Dict[str, Dict[str, object]] = {}
-    vulnerability_index: Dict[Tuple[str, str], Dict[str, object]] = {}
+def generate_sbom(report: Report) -> dict[str, object]:
+    component_index: dict[str, dict[str, object]] = {}
+    vulnerability_index: dict[tuple[str, str], dict[str, object]] = {}
 
     for finding in report.findings:
         coordinate = finding.dependency.coordinate
@@ -62,11 +63,7 @@ def generate_sbom(report: Report) -> Dict[str, object]:
 
         for advisory in finding.advisories:
             key = (advisory.source, advisory.identifier)
-            references = [
-                {"url": ref.strip()}
-                for ref in advisory.references
-                if isinstance(ref, str) and ref.strip()
-            ]
+            references = _serialize_references(advisory.references)
             affects_entry = {"ref": purl}
             entry = vulnerability_index.get(key)
             if entry is None:
@@ -121,9 +118,9 @@ def write_sbom(report: Report, *, path: str | Path) -> None:
     )
 
 
-def _normalize_licenses(metadata: dict[str, Any]) -> List[Dict[str, object]]:
+def _normalize_licenses(metadata: dict[str, Any]) -> list[dict[str, object]]:
     raw = metadata.get("license")
-    entries: List[Dict[str, object]] = []
+    entries: list[dict[str, object]] = []
 
     def append_entry(value: Any) -> None:
         entry = _license_entry(value)
@@ -132,7 +129,7 @@ def _normalize_licenses(metadata: dict[str, Any]) -> List[Dict[str, object]]:
 
     if isinstance(raw, str) or isinstance(raw, dict):
         append_entry(raw)
-    elif isinstance(raw, (list, tuple, set)):
+    elif isinstance(raw, Iterable):
         for item in raw:
             append_entry(item)
     elif raw is not None:
@@ -143,29 +140,42 @@ def _normalize_licenses(metadata: dict[str, Any]) -> List[Dict[str, object]]:
     return unique_preserving_order(entries, key=_license_key)
 
 
-def _license_entry(value: Any) -> Dict[str, object] | None:
+def _license_entry(value: Any) -> dict[str, object] | None:
     if isinstance(value, str):
         cleaned = value.strip()
         if cleaned:
             return {"license": {"id": cleaned}}
         return None
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         identifier = value.get("id") or value.get("name")
         if isinstance(identifier, str) and identifier.strip():
             return {"license": {"id": identifier.strip()}}
         nested = value.get("license")
-        if isinstance(nested, dict):
+        if isinstance(nested, Mapping):
             return {"license": nested}
         return {"license": value}
     return None
 
 
-def _license_key(entry: Dict[str, object]) -> Tuple[str, Tuple[Tuple[str, str], ...]]:
+def _license_key(entry: dict[str, object]) -> tuple[str, tuple[tuple[str, str], ...]]:
     license_info = entry.get("license")
-    if isinstance(license_info, dict):
+    if isinstance(license_info, Mapping):
         identifier = license_info.get("id") or license_info.get("name")
         if isinstance(identifier, str) and identifier.strip():
             return (identifier.strip(), tuple())
-        normalized_items = tuple(sorted((str(k), str(v)) for k, v in license_info.items()))
+        normalized_items = tuple(
+            sorted((str(k), str(v)) for k, v in license_info.items())
+        )
         return ("dict", normalized_items)
     return ("raw", tuple(sorted((str(k), str(v)) for k, v in entry.items())))
+
+
+def _serialize_references(raw_references: Iterable[str]) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    for ref in raw_references:
+        if not isinstance(ref, str):
+            continue
+        cleaned = ref.strip()
+        if cleaned:
+            entries.append({"url": cleaned})
+    return entries
