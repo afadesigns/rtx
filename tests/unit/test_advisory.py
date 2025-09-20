@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
-from typing import Dict, List
 
 import pytest
 
@@ -92,10 +92,15 @@ async def test_osv_query_deduplicates_dependencies(monkeypatch, tmp_path: Path) 
 @pytest.mark.asyncio
 async def test_github_query_deduplicates_packages(monkeypatch, tmp_path: Path) -> None:
     client = AdvisoryClient()
-    client._gh_token = "test-token"  # enable GitHub path
+    client._gh_token = uuid.uuid4().hex  # enable GitHub path
     calls = 0
 
-    async def fake_post(url: str, *, headers: dict | None = None, json: dict | None = None) -> _FakeResponse:
+    async def fake_post(
+        url: str,
+        *,
+        headers: dict | None = None,
+        json: dict | None = None,
+    ) -> _FakeResponse:
         nonlocal calls
         calls += 1
         assert headers and "Authorization" in headers
@@ -194,7 +199,7 @@ async def test_fetch_advisories_respects_disable_flag(monkeypatch, tmp_path: Pat
     monkeypatch.setenv("RTX_DISABLE_GITHUB_ADVISORIES", "1")
     monkeypatch.setattr(config, "OSV_CACHE_SIZE", 0)
     client = AdvisoryClient()
-    client._gh_token = "token"
+    client._gh_token = uuid.uuid4().hex
     invoked = False
 
     async def fail_query(_: list[Dependency]) -> dict:
@@ -318,10 +323,10 @@ async def test_clear_cache_empties_entries(monkeypatch, tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_fetch_advisories_deduplicates_and_merges(monkeypatch, tmp_path: Path) -> None:
     client = AdvisoryClient()
-    client._gh_token = "token"
+    client._gh_token = uuid.uuid4().hex
     dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
 
-    osv_results: Dict[str, List[Advisory]] = {
+    osv_results: dict[str, list[Advisory]] = {
         dependency.coordinate: [
             Advisory(
                 identifier="GHSA-123",
@@ -340,7 +345,7 @@ async def test_fetch_advisories_deduplicates_and_merges(monkeypatch, tmp_path: P
         ]
     }
 
-    gh_results: Dict[str, List[Advisory]] = {
+    gh_results: dict[str, list[Advisory]] = {
         dependency.coordinate: [
             Advisory(
                 identifier="GHSA-123",
@@ -359,10 +364,10 @@ async def test_fetch_advisories_deduplicates_and_merges(monkeypatch, tmp_path: P
         ]
     }
 
-    async def fake_osv(_: list[Dependency]) -> Dict[str, List[Advisory]]:  # type: ignore[override]
+    async def fake_osv(_: list[Dependency]) -> dict[str, list[Advisory]]:  # type: ignore[override]
         return osv_results
 
-    async def fake_gh(_: list[Dependency]) -> Dict[str, List[Advisory]]:  # type: ignore[override]
+    async def fake_gh(_: list[Dependency]) -> dict[str, list[Advisory]]:  # type: ignore[override]
         return gh_results
 
     monkeypatch.setattr(client, "_query_osv", fake_osv)

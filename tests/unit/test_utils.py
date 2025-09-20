@@ -61,8 +61,7 @@ def test_chunked_rejects_non_positive_size() -> None:
 
 def test_chunked_supports_iterables() -> None:
     def generator() -> Iterator[int]:
-        for value in range(5):
-            yield value
+        yield from range(5)
 
     chunks = list(chunked(generator(), 2))
     assert chunks == [[0, 1], [2, 3], [4]]

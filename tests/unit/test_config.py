@@ -4,8 +4,8 @@ import importlib
 
 import pytest
 
-from rtx import __version__
 import rtx.config as config
+from rtx import __version__
 
 
 def test_http_settings_respect_environment(monkeypatch: pytest.MonkeyPatch) -> None:

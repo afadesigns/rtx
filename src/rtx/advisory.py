@@ -4,17 +4,17 @@ import asyncio
 import os
 import re
 from collections import OrderedDict
-from itertools import chain, zip_longest
-from typing import Dict, Iterable, List, Tuple
+from collections.abc import Iterable
+from itertools import chain
 
 import httpx
 
 from rtx import config
 from rtx.exceptions import AdvisoryServiceError
-from rtx.models import Advisory, Dependency, Severity, SEVERITY_RANK
+from rtx.models import SEVERITY_RANK, Advisory, Dependency, Severity
 from rtx.utils import AsyncRetry, chunked, env_flag, unique_preserving_order
 
-OSV_ECOSYSTEM_MAP: Dict[str, str] = {
+OSV_ECOSYSTEM_MAP: dict[str, str] = {
     "pypi": "PyPI",
     "npm": "npm",
     "maven": "Maven",
@@ -29,7 +29,7 @@ OSV_ECOSYSTEM_MAP: Dict[str, str] = {
 }
 
 def _extract_numeric_score(raw: object) -> float:
-    if isinstance(raw, (int, float)):
+    if isinstance(raw, int | float):
         return float(raw)
     if isinstance(raw, str):
         stripped = raw.strip()
@@ -94,15 +94,20 @@ def _severity_from_osv(entry: dict) -> Severity:
 
 
 class AdvisoryClient:
-    def __init__(self, *, timeout: float = config.HTTP_TIMEOUT, retries: int = config.HTTP_RETRIES) -> None:
+    def __init__(
+        self,
+        *,
+        timeout: float = config.HTTP_TIMEOUT,
+        retries: int = config.HTTP_RETRIES,
+    ) -> None:
         self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": config.USER_AGENT})
         self._retry = AsyncRetry(retries=retries, delay=0.5, exceptions=(httpx.HTTPError,))
         self._gh_token = os.getenv("RTX_GITHUB_TOKEN") or os.getenv(config.GITHUB_DEFAULT_TOKEN_ENV)
         self._gh_disabled = env_flag("RTX_DISABLE_GITHUB_ADVISORIES", False)
-        self._osv_cache: OrderedDict[str, List[Advisory]] = OrderedDict()
+        self._osv_cache: OrderedDict[str, list[Advisory]] = OrderedDict()
         self._osv_cache_size = config.OSV_CACHE_SIZE
 
-    async def __aenter__(self) -> "AdvisoryClient":
+    async def __aenter__(self) -> AdvisoryClient:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -111,19 +116,22 @@ class AdvisoryClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def fetch_advisories(self, dependencies: Iterable[Dependency]) -> Dict[str, List[Advisory]]:
+    async def fetch_advisories(
+        self,
+        dependencies: Iterable[Dependency],
+    ) -> dict[str, list[Advisory]]:
         deps = list(dependencies)
         osv_results = await self._query_osv(deps)
-        gh_results: Dict[str, List[Advisory]] = {}
+        gh_results: dict[str, list[Advisory]] = {}
         if self._gh_token and not self._gh_disabled:
             try:
                 gh_results = await self._query_github(deps)
             except AdvisoryServiceError:
                 gh_results = {}
-        combined: Dict[str, List[Advisory]] = {}
+        combined: dict[str, list[Advisory]] = {}
         for dep in deps:
             key = dep.coordinate
-            merged: Dict[Tuple[str, str], Advisory] = {}
+            merged: dict[tuple[str, str], Advisory] = {}
             for advisory in chain(osv_results.get(key, []), gh_results.get(key, [])):
                 dedup_key = (advisory.source, advisory.identifier)
                 existing = merged.get(dedup_key)
@@ -160,12 +168,12 @@ class AdvisoryClient:
             )
         return combined
 
-    async def _query_osv(self, dependencies: List[Dependency]) -> Dict[str, List[Advisory]]:
+    async def _query_osv(self, dependencies: list[Dependency]) -> dict[str, list[Advisory]]:
         if not dependencies:
             return {}
 
-        cached: Dict[str, List[Advisory]] = {}
-        unique_uncached: Dict[str, Dependency] = {}
+        cached: dict[str, list[Advisory]] = {}
+        unique_uncached: dict[str, Dependency] = {}
         for dep in dependencies:
             coordinate = dep.coordinate
             if self._osv_cache_size > 0:
@@ -176,7 +184,7 @@ class AdvisoryClient:
                     continue
             unique_uncached.setdefault(coordinate, dep)
 
-        async def task(chunk_deps: List[Dependency]) -> Dict[str, List[Advisory]]:
+        async def task(chunk_deps: list[Dependency]) -> dict[str, list[Advisory]]:
             queries = [
                 {
                     "package": {
@@ -190,12 +198,12 @@ class AdvisoryClient:
             response = await self._client.post(config.OSV_API_URL, json={"queries": queries})
             response.raise_for_status()
             payload = response.json()
-            out: Dict[str, List[Advisory]] = {}
-            results_iterable = payload.get("results") or []
-            for dep, entry in zip_longest(chunk_deps, results_iterable, fillvalue=None):
-                assert dep is not None
+            out: dict[str, list[Advisory]] = {}
+            results = list(payload.get("results") or [])
+            for index, dep in enumerate(chunk_deps):
+                entry = results[index] if index < len(results) else None
                 vulns = (entry or {}).get("vulns", []) if isinstance(entry, dict) else []
-                advisories: List[Advisory] = []
+                advisories: list[Advisory] = []
                 for vuln in vulns or []:
                     severity = _severity_from_osv(vuln)
                     advisory = Advisory(
@@ -213,14 +221,14 @@ class AdvisoryClient:
                 out[dep.coordinate] = advisories
             return out
 
-        aggregated: Dict[str, List[Advisory]] = dict(cached)
+        aggregated: dict[str, list[Advisory]] = dict(cached)
         if unique_uncached:
             uncached = list(unique_uncached.values())
             chunks = [list(chunk) for chunk in chunked(uncached, config.OSV_BATCH_SIZE)]
             max_concurrency = max(1, getattr(config, "OSV_MAX_CONCURRENCY", 1))
             semaphore = asyncio.Semaphore(max_concurrency)
 
-            async def run_chunk(chunk_deps: List[Dependency]) -> Dict[str, List[Advisory]]:
+            async def run_chunk(chunk_deps: list[Dependency]) -> dict[str, list[Advisory]]:
                 async with semaphore:
                     deps_copy = list(chunk_deps)
                     return await self._retry(lambda deps=deps_copy: task(deps))
@@ -242,7 +250,7 @@ class AdvisoryClient:
     def clear_cache(self) -> None:
         self._osv_cache.clear()
 
-    async def _query_github(self, dependencies: List[Dependency]) -> Dict[str, List[Advisory]]:
+    async def _query_github(self, dependencies: list[Dependency]) -> dict[str, list[Advisory]]:
         query = """
         query($ecosystem: SecurityAdvisoryEcosystem!, $package: String!) {
           securityVulnerabilities(first: 20, ecosystem: $ecosystem, package: $package) {
@@ -259,7 +267,7 @@ class AdvisoryClient:
         }
         """
 
-        async def fetch(dep: Dependency) -> List[Advisory]:
+        async def fetch(dep: Dependency) -> list[Advisory]:
             variables = {
                 "ecosystem": dep.ecosystem.upper(),
                 "package": dep.name,
@@ -273,7 +281,7 @@ class AdvisoryClient:
                 raise AdvisoryServiceError("Invalid GitHub token")
             response.raise_for_status()
             data = response.json()
-            advisories: List[Advisory] = []
+            advisories: list[Advisory] = []
             nodes = (
                 data.get("data", {})
                 .get("securityVulnerabilities", {})
@@ -301,25 +309,25 @@ class AdvisoryClient:
                 )
             return advisories
 
-        results: Dict[str, List[Advisory]] = {}
+        results: dict[str, list[Advisory]] = {}
         semaphore = asyncio.Semaphore(config.GITHUB_MAX_CONCURRENCY)
 
-        async def run(dep: Dependency) -> Tuple[Dependency, List[Advisory] | Exception]:
+        async def run(dep: Dependency) -> tuple[Dependency, list[Advisory] | Exception]:
             async with semaphore:
                 try:
                     advisories = await self._retry(lambda dep=dep: fetch(dep))
-                except Exception as exc:  # noqa: BLE001 - propagate to caller
+                except Exception as exc:
                     return dep, exc
                 return dep, advisories
 
-        unique: Dict[Tuple[str, str], Dependency] = {}
+        unique: dict[tuple[str, str], Dependency] = {}
         for dep in dependencies:
             key = (dep.ecosystem, dep.name)
             unique.setdefault(key, dep)
 
         tasks = [run(dep) for dep in unique.values()]
         completed = await asyncio.gather(*tasks)
-        per_package: Dict[Tuple[str, str], List[Advisory]] = {}
+        per_package: dict[tuple[str, str], list[Advisory]] = {}
         for dep, outcome in completed:
             if isinstance(outcome, Exception):
                 continue

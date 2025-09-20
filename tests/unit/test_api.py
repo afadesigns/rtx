@@ -9,7 +9,13 @@ from rtx.models import Dependency, PackageFinding
 
 
 class _StubScanner:
-    def __init__(self, manager: str, dependencies: list[Dependency], *, matches: bool = True) -> None:
+    def __init__(
+        self,
+        manager: str,
+        dependencies: list[Dependency],
+        *,
+        matches: bool = True,
+    ) -> None:
         self.manager = manager
         self.manifests = []
         self.ecosystem = manager
@@ -24,10 +30,10 @@ class _StubScanner:
 
 
 class _StubAdvisoryClient:
-    async def __aenter__(self) -> "_StubAdvisoryClient":
+    async def __aenter__(self) -> _StubAdvisoryClient:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - interface compliance
+    async def __aexit__(self, exc_type, exc, tb) -> None:  # - interface compliance
         return None
 
     async def fetch_advisories(self, dependencies: list[Dependency]) -> dict[str, list[object]]:
@@ -35,7 +41,7 @@ class _StubAdvisoryClient:
 
 
 class _StubPolicyEngine:
-    async def __aenter__(self) -> "_StubPolicyEngine":
+    async def __aenter__(self) -> _StubPolicyEngine:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

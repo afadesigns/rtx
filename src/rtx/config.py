@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, List
 
 from rtx import __version__
 
@@ -54,9 +53,9 @@ GITHUB_MAX_CONCURRENCY = _int_env("RTX_GITHUB_MAX_CONCURRENCY", 6)
 
 OSV_API_URL = "https://api.osv.dev/v1/querybatch"
 GITHUB_ADVISORY_URL = "https://api.github.com/graphql"
-GITHUB_DEFAULT_TOKEN_ENV = "GITHUB_TOKEN"
+GITHUB_DEFAULT_TOKEN_ENV = os.getenv("RTX_GITHUB_DEFAULT_TOKEN_ENV", "GITHUB_TOKEN")
 
-SUPPORTED_MANAGERS: Dict[str, Dict[str, List[str]]] = {
+SUPPORTED_MANAGERS: dict[str, dict[str, list[str]]] = {
     "npm": {
         "manifests": ["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"],
         "ecosystem": ["npm"],

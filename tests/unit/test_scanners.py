@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 import pytest
 
+from rtx.registry import get_scanners
 from rtx.scanners.npm import NpmScanner
 from rtx.scanners.pypi import PyPIScanner
-from rtx.registry import get_scanners
 
 
 def test_pypi_scanner_reads_pyproject(tmp_path: Path) -> None:
@@ -25,7 +26,15 @@ def test_npm_scanner_reads_package_lock(tmp_path: Path) -> None:
     project = tmp_path / "demo"
     project.mkdir()
     (project / "package-lock.json").write_text(
-        """{\n  \"packages\": {\n    \"node_modules/lodash\": {\"version\": \"4.17.21\"}\n  }\n}\n""",
+        textwrap.dedent(
+            """
+            {
+              "packages": {
+                "node_modules/lodash": {"version": "4.17.21"}
+              }
+            }
+            """
+        ),
         encoding="utf-8",
     )
     scanner = NpmScanner()

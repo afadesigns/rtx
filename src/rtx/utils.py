@@ -6,11 +6,12 @@ import os
 import re
 import textwrap
 from collections import defaultdict
-from functools import lru_cache
+from collections.abc import Awaitable, Callable, Iterable, Sequence
+from functools import cache
 from hashlib import sha256
 from itertools import islice
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Sequence, Tuple, TypeVar
+from typing import Any, TypeVar
 
 import yaml
 
@@ -18,7 +19,13 @@ T = TypeVar("T")
 
 
 class AsyncRetry:
-    def __init__(self, retries: int, delay: float, *, exceptions: tuple[type[Exception], ...] = (Exception,)) -> None:
+    def __init__(
+        self,
+        retries: int,
+        delay: float,
+        *,
+        exceptions: tuple[type[Exception], ...] = (Exception,),
+    ) -> None:
         self.retries = retries
         self.delay = delay
         self._exceptions = exceptions
@@ -71,8 +78,8 @@ def read_toml(path: Path) -> Any:
         raise ValueError(f"Invalid TOML in {path}") from exc
 
 
-def detect_files(root: Path, patterns: Sequence[str]) -> List[Path]:
-    matches: List[Path] = []
+def detect_files(root: Path, patterns: Sequence[str]) -> list[Path]:
+    matches: list[Path] = []
     for pattern in patterns:
         if any(char in pattern for char in "*?["):
             matches.extend(root.glob(pattern))
@@ -102,7 +109,7 @@ def slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
 
-def chunked(iterable: Iterable[T], size: int) -> Iterable[List[T]]:
+def chunked(iterable: Iterable[T], size: int) -> Iterable[list[T]]:
     if size <= 0:
         raise ValueError("chunk size must be positive")
     if isinstance(iterable, Sequence):
@@ -123,9 +130,13 @@ def multiline(text: str) -> str:
     return textwrap.dedent(text).strip()
 
 
-def unique_preserving_order(values: Iterable[T], *, key: Callable[[T], Any] | None = None) -> List[T]:
-    seen: Dict[Any, None] = {}
-    output: List[T] = []
+def unique_preserving_order(
+    values: Iterable[T],
+    *,
+    key: Callable[[T], Any] | None = None,
+) -> list[T]:
+    seen: dict[Any, None] = {}
+    output: list[T] = []
     for value in values:
         marker = key(value) if key else value
         if marker in seen:
@@ -135,12 +146,12 @@ def unique_preserving_order(values: Iterable[T], *, key: Callable[[T], Any] | No
     return output
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_json_resource(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_yaml_resource(path: Path) -> Any:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -154,10 +165,10 @@ def env_flag(name: str, default: bool = False) -> bool:
 
 class Graph:
     def __init__(self) -> None:
-        self._nodes: Dict[str, Dict[str, Any]] = {}
-        self._edges: Dict[str, List[str]] = defaultdict(list)
+        self._nodes: dict[str, dict[str, Any]] = {}
+        self._edges: dict[str, list[str]] = defaultdict(list)
 
-    def add_node(self, key: str, metadata: Dict[str, Any]) -> None:
+    def add_node(self, key: str, metadata: dict[str, Any]) -> None:
         node = self._nodes.setdefault(key, {})
         node.update(metadata)
 
@@ -165,13 +176,13 @@ class Graph:
         if dest not in self._edges[src]:
             self._edges[src].append(dest)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "nodes": {key: dict(value) for key, value in self._nodes.items()},
             "edges": {key: list(values) for key, values in self._edges.items()},
         }
 
-    def dependencies_of(self, key: str) -> List[str]:
+    def dependencies_of(self, key: str) -> list[str]:
         return list(self._edges.get(key, []))
 
     def __len__(self) -> int:
