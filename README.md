@@ -31,19 +31,19 @@ pip install rtx-trust
   ```bash
   uv tool install --python 3.11 rtx-trust
   ```
-  This keeps `rtx` on your `PATH` without polluting the active environment and lets you pin the interpreter version used to run the scanner. citeturn2search0
+  This keeps `rtx` on your `PATH` without polluting the active environment and lets you pin the interpreter version used to run the scanner.
 - **Poetry** — add `rtx-trust` to an existing project and capture it in `poetry.lock`:
   ```bash
   poetry add rtx-trust
   ```
-  Poetry resolves the dependency and updates both `pyproject.toml` and the lock file automatically. citeturn0search1
+  Poetry resolves the dependency and updates both `pyproject.toml` and the lock file automatically.
 - **Conda / Mamba** — create an environment with a modern Python, then install via the environment’s pip so the package stays isolated:
   ```bash
   conda create -n rtx python=3.11 pip
   conda activate rtx
   python -m pip install rtx-trust
   ```
-  Always install pip-based dependencies after your conda packages to avoid solver conflicts. citeturn1search1
+  Always install pip-based dependencies after your conda packages to avoid solver conflicts.
 
 ## Quickstart
 ```bash

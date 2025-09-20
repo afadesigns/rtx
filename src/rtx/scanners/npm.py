@@ -26,16 +26,9 @@ class NpmScanner(BaseScanner):
 
         pnpm_lock = root / "pnpm-lock.yaml"
         if pnpm_lock.exists():
-            data = read_yaml(pnpm_lock) or {}
-            packages = data.get("packages", {})
-            if isinstance(packages, dict):
-                for name, meta in packages.items():
-                    if isinstance(meta, dict) and "resolution" in meta:
-                        version = meta.get("version") or meta["resolution"].get("version")
-                        if isinstance(version, str):
-                            normalized = name.split("/")[-1]
-                            dependencies.setdefault(normalized, version)
-                            origins.setdefault(normalized, pnpm_lock)
+            for name, version in common.read_pnpm_lock(pnpm_lock).items():
+                dependencies.setdefault(name, version)
+                origins.setdefault(name, pnpm_lock)
 
         yarn_lock = root / "yarn.lock"
         if yarn_lock.exists():

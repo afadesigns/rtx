@@ -145,6 +145,89 @@ def read_uv_lock(path: Path) -> Dict[str, str]:
     return results
 
 
+def _parse_pnpm_package_key(key: str) -> Tuple[str | None, str | None]:
+    if not isinstance(key, str):
+        return None, None
+    trimmed = key.lstrip("/")
+    if not trimmed:
+        return None, None
+    base = trimmed.split("(", 1)[0]
+    if base.startswith("@"):
+        index = base.rfind("@")
+        if index <= 0:
+            return None, None
+        name = base[:index]
+        version = base[index + 1 :]
+    else:
+        if "@" not in base:
+            return base or None, None
+        name, version = base.split("@", 1)
+    name = name.strip() if name else None
+    version = version.strip() if version else None
+    return (name or None, version or None)
+
+
+def _clean_pnpm_version(raw: str | None) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    candidate = raw.split("(", 1)[0].strip()
+    if not candidate:
+        return None
+    if candidate.startswith(("link:", "workspace:", "file:", "github:", "git+")):
+        return None
+    if candidate.startswith("npm:"):
+        remainder = candidate.split(":", 1)[1]
+        _, version = _parse_pnpm_package_key(remainder)
+        return version
+    return candidate
+
+
+def read_pnpm_lock(path: Path) -> Dict[str, str]:
+    data = read_yaml(path) or {}
+    direct: Dict[str, str] = {}
+
+    importers = data.get("importers", {})
+    if isinstance(importers, dict):
+        for importer in importers.values():
+            if not isinstance(importer, dict):
+                continue
+            for section in (
+                "dependencies",
+                "optionalDependencies",
+                "devDependencies",
+                "peerDependencies",
+            ):
+                section_data = importer.get(section)
+                if not isinstance(section_data, dict):
+                    continue
+                for name, info in section_data.items():
+                    if not isinstance(name, str):
+                        continue
+                    raw_version: str | None = None
+                    if isinstance(info, dict):
+                        raw_version = info.get("version") or info.get("specifier")
+                    elif isinstance(info, str):
+                        raw_version = info
+                    version = _clean_pnpm_version(raw_version)
+                    if version:
+                        direct.setdefault(name, version)
+
+    if not direct:
+        packages = data.get("packages", {})
+        if isinstance(packages, dict):
+            for key, meta in packages.items():
+                name, version = _parse_pnpm_package_key(key)
+                if name and version:
+                    direct.setdefault(name, version)
+                if isinstance(meta, dict):
+                    meta_name = meta.get("name")
+                    meta_version = _clean_pnpm_version(meta.get("version"))
+                    if isinstance(meta_name, str) and meta_version:
+                        direct.setdefault(meta_name, meta_version)
+
+    return direct
+
+
 def read_requirements(path: Path) -> Dict[str, str]:
     out: Dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():

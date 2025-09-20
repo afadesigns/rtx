@@ -160,3 +160,57 @@ version = "13.7.1"
 
     result = common.read_uv_lock(uv_lock)
     assert result == {"httpx": "0.27.2", "rich": "13.7.1"}
+
+
+def test_read_pnpm_lock_prefers_importers(tmp_path: Path) -> None:
+    pnpm_lock = tmp_path / "pnpm-lock.yaml"
+    pnpm_lock.write_text(
+        """
+lockfileVersion: '9.0'
+
+importers:
+  app:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.1.1(@types/react@19.1.13)
+      '@scope/pkg':
+        specifier: ^1.0.0
+        version: 1.2.3(peer@1.0.0)
+    devDependencies:
+      typescript:
+        specifier: ^5.2.0
+        version: 5.3.2
+
+packages:
+  '/react@19.1.1':
+    resolution: {integrity: sha512-example}
+  '/@scope/pkg@1.2.3':
+    resolution: {integrity: sha512-example}
+  'typescript@5.3.2':
+    resolution: {integrity: sha512-example}
+""",
+        encoding="utf-8",
+    )
+
+    result = common.read_pnpm_lock(pnpm_lock)
+    assert result == {"react": "19.1.1", "@scope/pkg": "1.2.3", "typescript": "5.3.2"}
+
+
+def test_read_pnpm_lock_falls_back_to_packages(tmp_path: Path) -> None:
+    pnpm_lock = tmp_path / "pnpm-lock.yaml"
+    pnpm_lock.write_text(
+        """
+lockfileVersion: '9.0'
+
+packages:
+  '@scope/other@2.0.0':
+    resolution: {integrity: sha512-example}
+  'react@18.2.0':
+    resolution: {integrity: sha512-example}
+""",
+        encoding="utf-8",
+    )
+
+    result = common.read_pnpm_lock(pnpm_lock)
+    assert result == {"@scope/other": "2.0.0", "react": "18.2.0"}
