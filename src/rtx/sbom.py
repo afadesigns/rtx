@@ -93,6 +93,9 @@ def generate_sbom(report: Report) -> dict[str, object]:
     vulnerabilities = [
         vulnerability_index[key] for key in sorted(vulnerability_index)
     ]
+    for entry in vulnerabilities:
+        entry["affects"] = sorted(entry["affects"], key=lambda item: item["ref"])
+        entry["references"] = sorted(entry["references"], key=lambda item: item["url"])
 
     return {
         "bomFormat": "CycloneDX",

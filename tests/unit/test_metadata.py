@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from rtx.metadata import MetadataClient, ReleaseMetadata, _parse_date
+from rtx.metadata import MetadataClient, ReleaseMetadata, _dedupe_names, _parse_date
 from rtx.models import Dependency
 
 httpx = pytest.importorskip("httpx")
@@ -35,6 +35,15 @@ def test_parse_date_supports_fractional_and_z_suffix() -> None:
     assert parsed is not None
     assert parsed.microsecond == 123456
     assert parsed.tzinfo is None
+
+
+def test_dedupe_names_normalizes_and_trims() -> None:
+    candidates = ["Alice", " alice ", "ALICE", None, "Bob", "bob", ""]
+    assert _dedupe_names(candidates) == ["Alice", "Bob"]
+
+
+def test_dedupe_names_preserves_order() -> None:
+    assert _dedupe_names(["One", "Two", "one", "TWO", "Three"]) == ["One", "Two", "Three"]
 
 
 def test_release_metadata_uses_slots() -> None:
@@ -295,6 +304,44 @@ async def test_fetch_gomod_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     assert metadata.total_releases == 2
     assert metadata.maintainers == []
     assert any(path.endswith("@v/list") for path in requested)
+
+
+@pytest.mark.asyncio
+async def test_fetch_gomod_respects_concurrency(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("go", "example.com/concurrent", "1.0.0", True, tmp_path)
+    requested: list[str] = []
+    active = 0
+    max_active = 0
+    lock = asyncio.Lock()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal active, max_active
+        requested.append(request.url.path)
+        path = request.url.path
+        if path.endswith("/list"):
+            return text_response("v1.0.0\nv1.1.0\nv1.2.0\n")
+        async with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            await asyncio.sleep(0.01)
+            return json_response({"Time": datetime.utcnow().isoformat()})
+        finally:
+            async with lock:
+                active -= 1
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    monkeypatch.setattr("rtx.config.GOMOD_METADATA_CONCURRENCY", 2, raising=False)
+    try:
+        await client._fetch_gomod(dependency)
+    finally:
+        await client.close()
+
+    assert any(path.endswith("@v/list") for path in requested)
+    assert max_active <= 2
 
 
 @pytest.mark.asyncio

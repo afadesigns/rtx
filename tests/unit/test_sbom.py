@@ -137,10 +137,11 @@ def test_generate_sbom_merges_vulnerabilities(tmp_path: Path) -> None:
     refs = [ref["url"] for ref in entry["references"]]
     assert refs == ["https://example.com/vuln", "https://mirror.example/vuln"]
     affects = [affect["ref"] for affect in entry["affects"]]
-    assert affects == [
+    assert affects == sorted(affects)
+    assert set(affects) == {
         "pkg:pypi/alpha@1.0.0",
         "pkg:npm/beta@2.0.0",
-    ]
+    }
 
 
 def test_write_sbom_creates_parent_directories(tmp_path: Path) -> None:
@@ -162,3 +163,52 @@ def test_write_sbom_creates_parent_directories(tmp_path: Path) -> None:
     assert destination.exists()
     payload = json.loads(destination.read_text(encoding="utf-8"))
     assert payload["components"][0]["name"] == "tool"
+
+
+def test_generate_sbom_orders_outputs(tmp_path: Path) -> None:
+    dependency_a = Dependency(
+        ecosystem="pypi",
+        name="zeta",
+        version="1.0.0",
+        direct=True,
+        manifest=tmp_path / "zeta",
+    )
+    dependency_b = Dependency(
+        ecosystem="pypi",
+        name="alpha",
+        version="1.0.0",
+        direct=False,
+        manifest=tmp_path / "alpha",
+    )
+    advisory = Advisory(
+        identifier="OSV-ORDER",
+        source="osv.dev",
+        severity=Severity.MEDIUM,
+        summary="Ordering check",
+        references=[
+            "https://example.com/b",
+            "https://example.com/a",
+        ],
+    )
+    findings = [
+        PackageFinding(dependency=dependency_a, advisories=[advisory]),
+        PackageFinding(dependency=dependency_b, advisories=[advisory]),
+    ]
+    report = Report(
+        path=tmp_path,
+        managers=["pypi"],
+        findings=findings,
+        generated_at=datetime.utcnow(),
+    )
+
+    sbom = generate_sbom(report)
+    component_names = [component["name"] for component in sbom["components"]]
+    assert component_names == sorted(component_names)
+    vulnerability = sbom["vulnerabilities"][0]
+    assert [ref["url"] for ref in vulnerability["references"]] == [
+        "https://example.com/a",
+        "https://example.com/b",
+    ]
+    assert [affect["ref"] for affect in vulnerability["affects"]] == sorted(
+        affect["ref"] for affect in vulnerability["affects"]
+    )

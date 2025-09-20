@@ -7,9 +7,23 @@ from typing import Any
 
 import pytest
 
-from rtx.cli import _report_from_payload, main
+from rtx.cli import _report_from_payload, _resolve_output_path, main
+from rtx.exceptions import ReportRenderingError
 from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity, TrustSignal
 from rtx.system import ToolStatus
+
+
+def test_resolve_output_path_table_defaults(tmp_path: Path) -> None:
+    assert _resolve_output_path("table", None) is None
+    path = tmp_path / "report.txt"
+    assert _resolve_output_path("table", str(path)) == path
+
+
+def test_resolve_output_path_requires_output() -> None:
+    with pytest.raises(ReportRenderingError, match="JSON output requires --output path"):
+        _resolve_output_path("json", None)
+    with pytest.raises(ReportRenderingError, match="HTML output requires --output path"):
+        _resolve_output_path("html", None)
 
 
 def _sample_report(exit_code: int = 0) -> Report:

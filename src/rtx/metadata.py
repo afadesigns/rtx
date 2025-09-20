@@ -353,7 +353,9 @@ class MetadataClient:
 
         now = datetime.utcnow()
         versions_to_check = versions[-10:]
-        semaphore = asyncio.Semaphore(min(5, len(versions_to_check)))
+        semaphore = asyncio.Semaphore(
+            min(config.GOMOD_METADATA_CONCURRENCY, len(versions_to_check))
+        )
 
         async def fetch_version(version: str) -> datetime | None:
             async with semaphore:

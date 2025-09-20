@@ -61,6 +61,7 @@ OSV_MAX_CONCURRENCY = _int_env("RTX_OSV_MAX_CONCURRENCY", 4)
 OSV_CACHE_SIZE = _non_negative_int_env("RTX_OSV_CACHE_SIZE", 512)
 DISABLE_OSV = _bool_env("RTX_DISABLE_OSV", False)
 GITHUB_MAX_CONCURRENCY = _int_env("RTX_GITHUB_MAX_CONCURRENCY", 6)
+GOMOD_METADATA_CONCURRENCY = _int_env("RTX_GOMOD_CONCURRENCY", 5)
 
 OSV_API_URL = "https://api.osv.dev/v1/querybatch"
 GITHUB_ADVISORY_URL = "https://api.github.com/graphql"
