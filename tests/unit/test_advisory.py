@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Dict, List
 
 import pytest
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
-from rtx.models import Dependency, Severity
+from rtx.models import Advisory, Dependency, Severity
 
 
 class _FakeResponse:
@@ -306,3 +307,72 @@ async def test_clear_cache_empties_entries(monkeypatch, tmp_path: Path) -> None:
         await client.close()
 
     assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_advisories_deduplicates_and_merges(monkeypatch, tmp_path: Path) -> None:
+    client = AdvisoryClient()
+    client._gh_token = "token"
+    dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
+
+    osv_results: Dict[str, List[Advisory]] = {
+        dependency.coordinate: [
+            Advisory(
+                identifier="GHSA-123",
+                source="osv.dev",
+                severity=Severity.LOW,
+                summary="",
+                references=["https://osv.dev/ghsa-123"],
+            ),
+            Advisory(
+                identifier="GHSA-123",
+                source="osv.dev",
+                severity=Severity.MEDIUM,
+                summary="Improved",
+                references=["https://mirror.example/ghsa-123"],
+            ),
+        ]
+    }
+
+    gh_results: Dict[str, List[Advisory]] = {
+        dependency.coordinate: [
+            Advisory(
+                identifier="GHSA-123",
+                source="github",
+                severity=Severity.CRITICAL,
+                summary="GitHub advisory",
+                references=["https://github.com/advisories/GHSA-123"],
+            ),
+            Advisory(
+                identifier="CVE-0001",
+                source="github",
+                severity=Severity.LOW,
+                summary="",
+                references=[],
+            ),
+        ]
+    }
+
+    async def fake_osv(_: list[Dependency]) -> Dict[str, List[Advisory]]:  # type: ignore[override]
+        return osv_results
+
+    async def fake_gh(_: list[Dependency]) -> Dict[str, List[Advisory]]:  # type: ignore[override]
+        return gh_results
+
+    monkeypatch.setattr(client, "_query_osv", fake_osv)
+    monkeypatch.setattr(client, "_query_github", fake_gh)
+
+    try:
+        merged = await client.fetch_advisories([dependency])
+    finally:
+        await client.close()
+
+    advisories = merged[dependency.coordinate]
+    assert len(advisories) == 3
+    osv_entry = next(adv for adv in advisories if adv.source == "osv.dev")
+    assert osv_entry.severity is Severity.MEDIUM
+    assert sorted(osv_entry.references) == [
+        "https://mirror.example/ghsa-123",
+        "https://osv.dev/ghsa-123",
+    ]
+    assert any(adv.source == "github" and adv.severity is Severity.CRITICAL for adv in advisories)

@@ -4,14 +4,14 @@ import asyncio
 import os
 import re
 from collections import OrderedDict
-from itertools import zip_longest
+from itertools import chain, zip_longest
 from typing import Dict, Iterable, List, Tuple
 
 import httpx
 
 from rtx import config
 from rtx.exceptions import AdvisoryServiceError
-from rtx.models import Advisory, Dependency, Severity
+from rtx.models import Advisory, Dependency, Severity, SEVERITY_RANK
 from rtx.utils import AsyncRetry, chunked, env_flag
 
 OSV_ECOSYSTEM_MAP: Dict[str, str] = {
@@ -123,7 +123,41 @@ class AdvisoryClient:
         combined: Dict[str, List[Advisory]] = {}
         for dep in deps:
             key = dep.coordinate
-            combined[key] = osv_results.get(key, []) + gh_results.get(key, [])
+            merged: Dict[Tuple[str, str], Advisory] = {}
+            for advisory in chain(osv_results.get(key, []), gh_results.get(key, [])):
+                dedup_key = (advisory.source, advisory.identifier)
+                existing = merged.get(dedup_key)
+                if existing is None:
+                    merged[dedup_key] = Advisory(
+                        identifier=advisory.identifier,
+                        source=advisory.source,
+                        severity=advisory.severity,
+                        summary=advisory.summary,
+                        references=list(dict.fromkeys(advisory.references)),
+                    )
+                    continue
+                references = list(dict.fromkeys(existing.references + advisory.references))
+                summary = existing.summary or advisory.summary
+                if SEVERITY_RANK[advisory.severity.value] > SEVERITY_RANK[existing.severity.value]:
+                    summary = advisory.summary or summary
+                    severity = advisory.severity
+                else:
+                    severity = existing.severity
+                merged[dedup_key] = Advisory(
+                    identifier=existing.identifier,
+                    source=existing.source,
+                    severity=severity,
+                    summary=summary,
+                    references=references,
+                )
+            combined[key] = sorted(
+                merged.values(),
+                key=lambda adv: (
+                    -SEVERITY_RANK[adv.severity.value],
+                    adv.source,
+                    adv.identifier,
+                ),
+            )
         return combined
 
     async def _query_osv(self, dependencies: List[Dependency]) -> Dict[str, List[Advisory]]:

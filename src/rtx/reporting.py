@@ -62,8 +62,7 @@ def render_table(report: Report, *, console: Console | None = None) -> None:
 
 def render_json(report: Report, *, path: Path | None = None) -> str:
     payload = report.to_dict()
-    payload["signal_summary"] = report.signal_summary().to_dict()
-    serialized = json.dumps(payload, indent=2)
+    serialized = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
     if path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(serialized, encoding="utf-8")

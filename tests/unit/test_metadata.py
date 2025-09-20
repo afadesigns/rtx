@@ -24,6 +24,13 @@ def test_parse_date_normalizes_timezone() -> None:
     assert parsed.day == 19
 
 
+def test_parse_date_supports_fractional_and_z_suffix() -> None:
+    parsed = _parse_date("2024-09-19T12:34:56.123456Z")
+    assert parsed is not None
+    assert parsed.microsecond == 123456
+    assert parsed.tzinfo is None
+
+
 @pytest.mark.asyncio
 async def test_clear_cache_resets_state(tmp_path: Path) -> None:
     client = MetadataClient()
@@ -90,6 +97,7 @@ async def test_fetch_caches_concurrent_requests(monkeypatch, tmp_path: Path) -> 
 async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
     now = datetime.utcnow()
+    older = now - timedelta(days=1)
 
     async def handler(request: "httpx.Request") -> "httpx.Response":
         if request.url.path.endswith("/json"):
@@ -101,7 +109,10 @@ async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                         "author": "bob",
                     },
                     "releases": {
-                        "1.0.0": [{"upload_time_iso_8601": now.isoformat()}],
+                        "1.0.0": [
+                            {"upload_time_iso_8601": older.isoformat()},
+                            {"upload_time": now.replace(microsecond=0).isoformat() + "Z"},
+                        ],
                         "0.9.0": [{"upload_time_iso_8601": (now - timedelta(days=31)).isoformat()}],
                     },
                 },

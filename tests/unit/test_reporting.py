@@ -115,6 +115,8 @@ def test_render_json_roundtrip(tmp_path: Path) -> None:
     assert payload["summary"]["manager_usage"] == {"pypi": 1}
     assert payload["summary"]["direct_dependencies"] == 1
     assert payload["summary"]["indirect_dependencies"] == 0
+    assert payload["signal_summary"]["counts"]["maintainer"] == 1
+    assert payload["signal_summary"]["severity_totals"]["low"] == 1
 
 
 def test_report_summary_includes_dependency_breakdown() -> None:

@@ -11,7 +11,13 @@ from rtx import config
 from rtx.models import Dependency
 from rtx.utils import AsyncRetry
 
-ISO_FORMATS = ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d"]
+ISO_FORMATS = [
+    "%Y-%m-%dT%H:%M:%S.%f%z",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%Y-%m-%dT%H:%M:%S.%f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d",
+]
 
 
 def _normalize_datetime(value: datetime) -> datetime:
@@ -23,13 +29,16 @@ def _normalize_datetime(value: datetime) -> datetime:
 def _parse_date(value: str | None) -> Optional[datetime]:
     if not value:
         return None
+    trimmed = value.strip()
+    if trimmed.endswith("Z"):
+        trimmed = f"{trimmed[:-1]}+00:00"
     for fmt in ISO_FORMATS:
         try:
-            return _normalize_datetime(datetime.strptime(value, fmt))
+            return _normalize_datetime(datetime.strptime(trimmed, fmt))
         except ValueError:
             continue
     try:
-        return _normalize_datetime(datetime.fromisoformat(value))
+        return _normalize_datetime(datetime.fromisoformat(trimmed))
     except ValueError:
         return None
 
@@ -161,7 +170,15 @@ class MetadataClient:
             if not files:
                 continue
             total += 1
-            upload_time = _parse_date(files[-1].get("upload_time_iso_8601")) if isinstance(files, list) else None
+            upload_time = None
+            if isinstance(files, list):
+                for file_meta in files:
+                    if not isinstance(file_meta, dict):
+                        continue
+                    timestamp = file_meta.get("upload_time_iso_8601") or file_meta.get("upload_time")
+                    parsed = _parse_date(timestamp if isinstance(timestamp, str) else None)
+                    if parsed is not None and (upload_time is None or parsed > upload_time):
+                        upload_time = parsed
             if upload_time and (not last_release or upload_time > last_release):
                 last_release = upload_time
             if upload_time and (now - upload_time).days <= 30:

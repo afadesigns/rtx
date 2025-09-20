@@ -140,6 +140,7 @@ class Report:
     findings: list[PackageFinding]
     generated_at: datetime
     stats: dict[str, Any] = field(default_factory=dict)
+    _signal_summary: SignalSummary | None = field(default=None, init=False, repr=False)
 
     def highest_severity(self) -> Severity:
         if not self.findings:
@@ -220,10 +221,13 @@ class Report:
                 for finding in self.findings
             ],
             "stats": self.stats,
+            "signal_summary": self.signal_summary().to_dict(),
         }
 
     def __iter__(self) -> Iterable[PackageFinding]:
         return iter(self.findings)
 
     def signal_summary(self) -> SignalSummary:
-        return SignalSummary.from_findings(self.findings)
+        if self._signal_summary is None:
+            self._signal_summary = SignalSummary.from_findings(self.findings)
+        return self._signal_summary
