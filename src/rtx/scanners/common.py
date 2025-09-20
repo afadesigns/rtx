@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
-from rtx.utils import detect_files, read_json, read_toml, read_yaml
+from rtx.utils import read_json, read_toml, read_yaml
 
 
 def normalize_version(raw: str) -> str:
@@ -19,13 +18,13 @@ def normalize_version(raw: str) -> str:
         return raw
 
 
-def load_json_dependencies(path: Path, key: str = "dependencies") -> Dict[str, str]:
+def load_json_dependencies(path: Path, key: str = "dependencies") -> dict[str, str]:
     data = read_json(path)
     section = data.get(key, {}) if isinstance(data, dict) else {}
     return {name: str(spec) for name, spec in section.items()}
 
 
-def load_lock_dependencies(path: Path) -> Dict[str, str]:
+def load_lock_dependencies(path: Path) -> dict[str, str]:
     data = read_json(path)
     if isinstance(data, dict) and "packages" in data:
         return {
@@ -34,7 +33,7 @@ def load_lock_dependencies(path: Path) -> Dict[str, str]:
             if isinstance(meta, dict)
         }
     if isinstance(data, dict) and "dependencies" in data:
-        out: Dict[str, str] = {}
+        out: dict[str, str] = {}
         for name, info in data["dependencies"].items():
             if isinstance(info, dict) and "version" in info:
                 out[_normalize_lock_name(name)] = str(info["version"])
@@ -43,16 +42,16 @@ def load_lock_dependencies(path: Path) -> Dict[str, str]:
 
 
 def _normalize_lock_name(name: str) -> str:
-    if name.startswith('./'):
+    if name.startswith("./"):
         name = name[2:]
-    if name.startswith('node_modules/'):
-        name = name.split('/', 1)[1]
+    if name.startswith("node_modules/"):
+        name = name.split("/", 1)[1]
     return name
 
 
-def read_poetry_lock(path: Path) -> Dict[str, str]:
+def read_poetry_lock(path: Path) -> dict[str, str]:
     content = read_toml(path)
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for package in content.get("package", []):
         if isinstance(package, dict):
             name = package.get("name")
@@ -62,13 +61,13 @@ def read_poetry_lock(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_uv_lock(path: Path) -> Dict[str, str]:
+def read_uv_lock(path: Path) -> dict[str, str]:
     data = read_toml(path)
     packages = data.get("package", [])
     if isinstance(packages, dict):
         packages = [packages]
 
-    catalog: Dict[str, Dict[str, object]] = {}
+    catalog: dict[str, dict[str, object]] = {}
     for package in packages:
         if isinstance(package, dict):
             name = package.get("name")
@@ -110,7 +109,7 @@ def read_uv_lock(path: Path) -> Dict[str, str]:
                                 continue
                             direct_names.add(req.name)
 
-    results: Dict[str, str] = {}
+    results: dict[str, str] = {}
     for name in sorted(direct_names):
         version = "*"
         package = catalog.get(name)
@@ -145,7 +144,7 @@ def read_uv_lock(path: Path) -> Dict[str, str]:
     return results
 
 
-def _parse_pnpm_package_key(key: str) -> Tuple[str | None, str | None]:
+def _parse_pnpm_package_key(key: str) -> tuple[str | None, str | None]:
     if not isinstance(key, str):
         return None, None
     trimmed = key.lstrip("/")
@@ -182,9 +181,22 @@ def _clean_pnpm_version(raw: str | None) -> str | None:
     return candidate
 
 
-def read_pnpm_lock(path: Path) -> Dict[str, str]:
+def read_pnpm_lock(path: Path) -> dict[str, str]:
     data = read_yaml(path) or {}
-    direct: Dict[str, str] = {}
+    direct: dict[str, str] = {}
+
+    def capture(section_data: dict[str, object]) -> None:
+        for name, info in section_data.items():
+            if not isinstance(name, str):
+                continue
+            raw_version: str | None = None
+            if isinstance(info, dict):
+                raw_version = info.get("version") or info.get("specifier")
+            elif isinstance(info, str):
+                raw_version = info
+            version = _clean_pnpm_version(raw_version)
+            if version:
+                direct.setdefault(name, version)
 
     importers = data.get("importers", {})
     if isinstance(importers, dict):
@@ -198,19 +210,8 @@ def read_pnpm_lock(path: Path) -> Dict[str, str]:
                 "peerDependencies",
             ):
                 section_data = importer.get(section)
-                if not isinstance(section_data, dict):
-                    continue
-                for name, info in section_data.items():
-                    if not isinstance(name, str):
-                        continue
-                    raw_version: str | None = None
-                    if isinstance(info, dict):
-                        raw_version = info.get("version") or info.get("specifier")
-                    elif isinstance(info, str):
-                        raw_version = info
-                    version = _clean_pnpm_version(raw_version)
-                    if version:
-                        direct.setdefault(name, version)
+                if isinstance(section_data, dict):
+                    capture(section_data)
 
     if not direct:
         packages = data.get("packages", {})
@@ -228,22 +229,22 @@ def read_pnpm_lock(path: Path) -> Dict[str, str]:
     return direct
 
 
-def read_requirements(path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def read_requirements(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        if "==" in line:
-            name, version = line.split("==", 1)
+        if "==" in stripped:
+            name, version = stripped.split("==", 1)
             out[name.strip()] = version.strip()
         else:
-            out[line] = "*"
+            out[stripped] = "*"
     return out
 
 
-def read_gemfile_lock(path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def read_gemfile_lock(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line.startswith(" ") or line.startswith("-"):
@@ -254,13 +255,13 @@ def read_gemfile_lock(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_maven_pom(path: Path) -> Dict[str, str]:
+def read_maven_pom(path: Path) -> dict[str, str]:
     import xml.etree.ElementTree as ET
 
-    tree = ET.parse(path)
+    tree = ET.parse(path)  # noqa: S314 - parsing local project metadata
     root = tree.getroot()
     namespace = "" if not root.tag.startswith("{") else root.tag.split("}", 1)[0] + "}"
-    deps: Dict[str, str] = {}
+    deps: dict[str, str] = {}
     for dependency in root.findall(f".//{namespace}dependency"):
         group = dependency.findtext(f"{namespace}groupId") or ""
         artifact = dependency.findtext(f"{namespace}artifactId") or ""
@@ -270,8 +271,8 @@ def read_maven_pom(path: Path) -> Dict[str, str]:
     return deps
 
 
-def read_go_mod(path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def read_go_mod(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
     lines = path.read_text(encoding="utf-8").splitlines()
     in_block = False
     for raw_line in lines:
@@ -299,9 +300,9 @@ def read_go_mod(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_cargo_lock(path: Path) -> Dict[str, str]:
+def read_cargo_lock(path: Path) -> dict[str, str]:
     content = read_toml(path)
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for package in content.get("package", []):
         if isinstance(package, dict):
             name = package.get("name")
@@ -311,9 +312,9 @@ def read_cargo_lock(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_composer_lock(path: Path) -> Dict[str, str]:
+def read_composer_lock(path: Path) -> dict[str, str]:
     data = read_json(path)
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for section in ("packages", "packages-dev"):
         for package in data.get(section, []):
             if isinstance(package, dict):
@@ -324,10 +325,10 @@ def read_composer_lock(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_environment_yml(path: Path) -> Dict[str, str]:
+def read_environment_yml(path: Path) -> dict[str, str]:
     data = read_yaml(path) or {}
     deps = data.get("dependencies", [])
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for entry in deps:
         if isinstance(entry, str) and "=" in entry:
             name, version = entry.split("=", 1)
@@ -342,8 +343,8 @@ def read_environment_yml(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_brewfile(path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def read_brewfile(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -358,9 +359,9 @@ def read_brewfile(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_packages_lock(path: Path) -> Dict[str, str]:
+def read_packages_lock(path: Path) -> dict[str, str]:
     data = read_json(path)
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     dependencies = data.get("dependencies", {})
     if isinstance(dependencies, dict):
         for name, info in dependencies.items():
@@ -372,8 +373,8 @@ def read_packages_lock(path: Path) -> Dict[str, str]:
     return out
 
 
-def read_dockerfile(path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def read_dockerfile(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line.startswith("RUN"):

@@ -22,6 +22,29 @@ def test_pypi_scanner_reads_pyproject(tmp_path: Path) -> None:
     assert any(dep.name == "requests" for dep in packages)
 
 
+def test_pypi_scanner_prefers_poetry_dep_versions(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        textwrap.dedent(
+            """
+            [project]
+            name = "demo"
+            version = "0.1.0"
+            dependencies = ["requests"]
+
+            [tool.poetry.dependencies]
+            requests = "2.31.0"
+            """
+        ),
+        encoding="utf-8",
+    )
+    scanner = PyPIScanner()
+    packages = scanner.scan(project)
+
+    assert any(dep.name == "requests" and dep.version == "2.31.0" for dep in packages)
+
+
 def test_npm_scanner_reads_package_lock(tmp_path: Path) -> None:
     project = tmp_path / "demo"
     project.mkdir()
