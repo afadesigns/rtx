@@ -48,7 +48,7 @@ def levenshtein(a: str, b: str, *, max_distance: int | None = None) -> int:
     return distance
 
 
-@dataclass
+@dataclass(slots=True)
 class ThreatSignals:
     metadata: ReleaseMetadata
     signals: list[TrustSignal]

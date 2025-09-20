@@ -233,7 +233,19 @@ class AdvisoryClient:
                     deps_copy = list(chunk_deps)
                     return await self._retry(lambda deps=deps_copy: task(deps))
 
-            chunk_results = await asyncio.gather(*(run_chunk(chunk) for chunk in chunks))
+            chunk_results: list[dict[str, list[Advisory]]] = []
+
+            async def worker(chunk_deps: list[Dependency]) -> None:
+                chunk_results.append(await run_chunk(chunk_deps))
+
+            if hasattr(asyncio, "TaskGroup"):
+                async with asyncio.TaskGroup() as task_group:
+                    for chunk in chunks:
+                        deps_copy = list(chunk)
+                        task_group.create_task(worker(deps_copy))
+            else:  # pragma: no cover - Python <3.11 fallback
+                await asyncio.gather(*(worker(list(chunk)) for chunk in chunks))
+
             for chunk_result in chunk_results:
                 for key, advisories in chunk_result.items():
                     aggregated[key] = advisories

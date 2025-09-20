@@ -17,7 +17,7 @@ for finding in report:
 
 ## Report Helpers
 - `Report.summary()` — returns counts, signal aggregates, exit code, managers, path.
-- `Report.signal_summary()` — reusable object with per-category and per-severity signal counts.
+- `Report.signal_summary` — reusable object with per-category and per-severity signal counts.
 - `Report.exit_code()` — convert verdicts into CI-friendly exit code.
 - `Report.to_dict()` — JSON-serializable structure (now includes `signal_summary`).
 

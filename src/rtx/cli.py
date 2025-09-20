@@ -253,7 +253,7 @@ def _handle_signal_summary(
 ) -> None:
     if not show and not output:
         return
-    summary = report.signal_summary()
+    summary = report.signal_summary
     if show:
         if not summary.has_data():
             console.print("No trust signals generated for this report.", style="green")

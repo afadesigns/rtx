@@ -9,13 +9,32 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from functools import cache
 from hashlib import sha256
-from itertools import islice
 from pathlib import Path
 from typing import Any, TypeVar
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python <3.11
+    import tomli as tomllib  # type: ignore[assignment]
 
 import yaml
 
 T = TypeVar("T")
+
+try:  # Python 3.12+
+    from itertools import batched
+except ImportError:  # pragma: no cover - fallback for Python <3.12
+    from itertools import islice as _islice
+
+    def batched(iterable: Iterable[T], size: int) -> Iterable[tuple[T, ...]]:
+        if size <= 0:
+            raise ValueError("batch size must be positive")
+        iterator = iter(iterable)
+        while True:
+            chunk = tuple(_islice(iterator, size))
+            if not chunk:
+                break
+            yield chunk
 
 
 class AsyncRetry:
@@ -68,11 +87,6 @@ def read_yaml(path: Path) -> Any:
 
 def read_toml(path: Path) -> Any:
     try:
-        import tomllib  # type: ignore[attr-defined]
-    except ModuleNotFoundError:  # pragma: no cover - Python <3.11
-        import tomli as tomllib  # type: ignore[no-redef]
-
-    try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, ValueError) as exc:  # pragma: no cover
         raise ValueError(f"Invalid TOML in {path}") from exc
@@ -112,18 +126,8 @@ def slugify(value: str) -> str:
 def chunked(iterable: Iterable[T], size: int) -> Iterable[list[T]]:
     if size <= 0:
         raise ValueError("chunk size must be positive")
-    if isinstance(iterable, Sequence):
-        for i in range(0, len(iterable), size):
-            chunk = iterable[i : i + size]
-            if chunk:
-                yield list(chunk)
-        return
-    iterator = iter(iterable)
-    while True:
-        chunk = list(islice(iterator, size))
-        if not chunk:
-            break
-        yield chunk
+    for chunk in batched(iterable, size):
+        yield list(chunk)
 
 
 def multiline(text: str) -> str:

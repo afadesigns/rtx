@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,7 @@ class Severity(str, Enum):
         return cls.NONE
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Dependency:
     ecosystem: str
     name: str
@@ -61,7 +62,7 @@ class Dependency:
         return self.ecosystem.casefold()
 
 
-@dataclass
+@dataclass(slots=True)
 class Advisory:
     identifier: str
     source: str
@@ -70,7 +71,7 @@ class Advisory:
     references: list[str] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class TrustSignal:
     category: str
     severity: Severity
@@ -78,7 +79,7 @@ class TrustSignal:
     evidence: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SignalSummary:
     counts: dict[str, int]
     severity_counts: dict[str, dict[str, int]]
@@ -122,7 +123,7 @@ class SignalSummary:
         }
 
 
-@dataclass
+@dataclass(slots=True)
 class PackageFinding:
     dependency: Dependency
     advisories: list[Advisory] = field(default_factory=list)
@@ -150,7 +151,6 @@ class Report:
     findings: list[PackageFinding]
     generated_at: datetime
     stats: dict[str, Any] = field(default_factory=dict)
-    _signal_summary: SignalSummary | None = field(default=None, init=False, repr=False)
 
     def highest_severity(self) -> Severity:
         if not self.findings:
@@ -177,7 +177,7 @@ class Report:
             if finding.dependency.direct:
                 direct += 1
             manager_usage[finding.dependency.ecosystem] += 1
-        signal_summary = self.signal_summary()
+        signal_summary = self.signal_summary
         indirect = len(self.findings) - direct
         return {
             "generated_at": self.generated_at.isoformat(),
@@ -231,13 +231,12 @@ class Report:
                 for finding in self.findings
             ],
             "stats": self.stats,
-            "signal_summary": self.signal_summary().to_dict(),
+            "signal_summary": self.signal_summary.to_dict(),
         }
 
     def __iter__(self) -> Iterable[PackageFinding]:
         return iter(self.findings)
 
+    @cached_property
     def signal_summary(self) -> SignalSummary:
-        if self._signal_summary is None:
-            self._signal_summary = SignalSummary.from_findings(self.findings)
-        return self._signal_summary
+        return SignalSummary.from_findings(self.findings)
