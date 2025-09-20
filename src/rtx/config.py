@@ -53,7 +53,17 @@ def _bool_env(name: str, default: bool) -> bool:
     return normalized in {"1", "true", "yes", "on"}
 
 
-POLICY_ANALYSIS_CONCURRENCY = _int_env("RTX_POLICY_CONCURRENCY", 16)
+def _cpu_parallel_default() -> int:
+    count = os.cpu_count()
+    if count is None or count <= 0:
+        count = 4
+    return max(1, min(32, count))
+
+
+DEFAULT_POLICY_CONCURRENCY = _cpu_parallel_default()
+
+
+POLICY_ANALYSIS_CONCURRENCY = _int_env("RTX_POLICY_CONCURRENCY", DEFAULT_POLICY_CONCURRENCY)
 HTTP_TIMEOUT = _float_env("RTX_HTTP_TIMEOUT", 5.0)
 HTTP_RETRIES = _non_negative_int_env("RTX_HTTP_RETRIES", 2)
 OSV_BATCH_SIZE = _int_env("RTX_OSV_BATCH_SIZE", 18)

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import subprocess
 
-from rtx.system import ToolStatus, collect_manager_diagnostics, probe_tool
+from rtx.system import (
+    DEFAULT_TOOL_PROBES,
+    ToolStatus,
+    collect_manager_diagnostics,
+    probe_tool,
+)
 
 
 def test_probe_tool_missing(monkeypatch):
@@ -35,5 +40,6 @@ def test_collect_manager_diagnostics_invokes_probe(monkeypatch):
 
     monkeypatch.setattr("rtx.system.probe_tool", fake_probe)
     statuses = collect_manager_diagnostics()
-    assert calls == ["pip", "npm", "uv"]
-    assert len(statuses) == 3
+    assert sorted(calls) == sorted(entry[0] for entry in DEFAULT_TOOL_PROBES)
+    assert [status.name for status in statuses] == [entry[0] for entry in DEFAULT_TOOL_PROBES]
+    assert len(statuses) == len(DEFAULT_TOOL_PROBES)

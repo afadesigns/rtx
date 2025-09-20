@@ -27,18 +27,19 @@ def test_resolve_output_path_table_defaults(tmp_path: Path) -> None:
 
 
 def test_resolve_output_path_requires_output() -> None:
-    with pytest.raises(
-        ReportRenderingError, match="JSON output requires --output path"
-    ):
+    with pytest.raises(ReportRenderingError, match="JSON output requires --output path"):
         _resolve_output_path("json", None)
-    with pytest.raises(
-        ReportRenderingError, match="HTML output requires --output path"
-    ):
+    with pytest.raises(ReportRenderingError, match="HTML output requires --output path"):
         _resolve_output_path("html", None)
 
 
 def test_resolve_output_path_allows_stdout_for_json() -> None:
     assert _resolve_output_path("json", "-") is None
+
+
+def test_resolve_output_path_rejects_stdout_for_html() -> None:
+    with pytest.raises(ReportRenderingError, match="HTML output cannot be streamed to stdout"):
+        _resolve_output_path("html", "-")
 
 
 def _sample_report(exit_code: int = 0) -> Report:
@@ -89,9 +90,7 @@ def _sample_report(exit_code: int = 0) -> Report:
         stats={
             "dependency_count": len(findings),
             "direct_dependencies": len([f for f in findings if f.dependency.direct]),
-            "indirect_dependencies": len(
-                [f for f in findings if not f.dependency.direct]
-            ),
+            "indirect_dependencies": len([f for f in findings if not f.dependency.direct]),
             "graph_nodes": len(findings),
             "graph_edges": 0,
             "manager_usage": {"pypi": len(findings)},
@@ -104,9 +103,7 @@ def mock_logging(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("rtx.cli._configure_logging", lambda level: None, raising=False)
 
 
-def test_scan_invokes_render(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
-) -> None:
+def test_scan_invokes_render(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
     report = _sample_report(exit_code=0)
     captured: dict[str, Any] = {}
 
@@ -137,9 +134,7 @@ def test_scan_rejects_unknown_format(tmp_path: Path, capsys: Any) -> None:
     assert "invalid choice" in captured.err
 
 
-def test_scan_unknown_manager(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
-) -> None:
+def test_scan_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
     def fail(_path: Path, managers=None):
         raise ValueError("Unknown package manager(s): foo")
 
@@ -157,9 +152,7 @@ def test_scan_requires_output_for_json(
 ) -> None:
     report = _sample_report(exit_code=0)
     monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
-    monkeypatch.setattr(
-        "rtx.reporting.render_table", lambda *_, **__: None, raising=False
-    )
+    monkeypatch.setattr("rtx.reporting.render_table", lambda *_, **__: None, raising=False)
     monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
 
     exit_code = main(["scan", "--path", str(tmp_path), "--format", "json"])
@@ -176,9 +169,7 @@ def test_scan_writes_json_to_stdout(
     monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
     monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
 
-    exit_code = main(
-        ["scan", "--path", str(tmp_path), "--format", "json", "--output", "-"]
-    )
+    exit_code = main(["scan", "--path", str(tmp_path), "--format", "json", "--output", "-"])
 
     assert exit_code == 0
     captured = capsys.readouterr().out
@@ -193,9 +184,7 @@ def test_scan_signal_summary_flags(
 ) -> None:
     report = _sample_report(exit_code=2)
     monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
-    monkeypatch.setattr(
-        "rtx.reporting.render_table", lambda *_, **__: None, raising=False
-    )
+    monkeypatch.setattr("rtx.reporting.render_table", lambda *_, **__: None, raising=False)
     monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
 
     exit_code = main(
@@ -222,9 +211,7 @@ def test_scan_signal_summary_stdout(
 ) -> None:
     report = _sample_report(exit_code=2)
     monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
-    monkeypatch.setattr(
-        "rtx.reporting.render_table", lambda *_, **__: None, raising=False
-    )
+    monkeypatch.setattr("rtx.reporting.render_table", lambda *_, **__: None, raising=False)
     monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
 
     exit_code = main(
@@ -399,9 +386,7 @@ def test_diagnostics_outputs_plain_text(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_diagnostics_json_output(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
-    statuses = [
-        ToolStatus(name="pip", available=True, path="/usr/bin/pip", version="pip 25")
-    ]
+    statuses = [ToolStatus(name="pip", available=True, path="/usr/bin/pip", version="pip 25")]
 
     monkeypatch.setattr(
         "rtx.cli.collect_manager_diagnostics",

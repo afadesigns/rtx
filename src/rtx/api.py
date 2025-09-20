@@ -5,7 +5,7 @@ from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Awaitable, cast
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
@@ -35,20 +35,23 @@ def _merge_dependency(existing: Dependency, new: Dependency) -> Dependency:
     )
 
 
-async def scan_project_async(
-    path: Path, *, managers: list[str] | None = None
-) -> Report:
+async def scan_project_async(path: Path, *, managers: list[str] | None = None) -> Report:
     root = path.resolve()
     scanners = get_scanners(managers)
     discovered: list[Dependency] = []
     used_managers: list[str] = []
+    scan_jobs: list[tuple[str, Awaitable[list[Dependency]]]] = []
     for scanner in scanners:
         if managers is None and not scanner.matches(root):
             continue
-        packages = scanner.scan(root)
-        if packages:
-            discovered.extend(packages)
-            used_managers.append(scanner.manager)
+        scan_jobs.append((scanner.manager, asyncio.to_thread(scanner.scan, root)))
+
+    if scan_jobs:
+        results = await asyncio.gather(*(job for _, job in scan_jobs))
+        for (manager, _), packages in zip(scan_jobs, results):
+            if packages:
+                discovered.extend(packages)
+                used_managers.append(manager)
     if not discovered:
         raise ManifestNotFound("No supported manifests found")
 
@@ -84,15 +87,10 @@ async def scan_project_async(
                     tg.create_task(analyze_with_limit(index, dep))
         else:
             await asyncio.gather(
-                *(
-                    analyze_with_limit(index, dep)
-                    for index, dep in enumerate(dependencies)
-                )
+                *(analyze_with_limit(index, dep) for index, dep in enumerate(dependencies))
             )
 
-    findings: list[PackageFinding] = [
-        finding for finding in findings_buffer if finding is not None
-    ]
+    findings: list[PackageFinding] = [finding for finding in findings_buffer if finding is not None]
 
     graph = Graph()
     for finding in findings:

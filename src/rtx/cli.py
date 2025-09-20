@@ -28,17 +28,20 @@ def _configure_logging(level: str) -> None:
 def _resolve_output_path(fmt: str, output: str | None) -> Path | None:
     """Normalize CLI format/output combinations and enforce requirements."""
     normalized = fmt.lower()
+    candidate = output.strip() if isinstance(output, str) else None
     if normalized == "json":
-        if not output:
+        if not candidate:
             raise ReportRenderingError("JSON output requires --output path")
-        if output == "-":
+        if candidate == "-":
             return None
-        return Path(output)
+        return Path(candidate)
     if normalized == "html":
-        if not output:
+        if not candidate:
             raise ReportRenderingError("HTML output requires --output path")
-        return Path(output)
-    return Path(output) if output else None
+        if candidate == "-":
+            raise ReportRenderingError("HTML output cannot be streamed to stdout")
+        return Path(candidate)
+    return Path(candidate) if candidate else None
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
@@ -129,9 +132,7 @@ def cmd_pre_upgrade(args: argparse.Namespace) -> int:
         async with AdvisoryClient() as advisory_client:
             advisory_map = await advisory_client.fetch_advisories([dependency])
         async with TrustPolicyEngine() as engine:
-            return await engine.analyze(
-                dependency, advisory_map.get(dependency.coordinate, [])
-            )
+            return await engine.analyze(dependency, advisory_map.get(dependency.coordinate, []))
 
     finding = asyncio.run(evaluate())
     console.print(f"Baseline: {baseline.dependency.version} → {baseline.verdict.value}")
@@ -223,8 +224,7 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
     findings: list[PackageFinding] = []
     entries = (
         (entry for entry in findings_data if isinstance(entry, Mapping))
-        if isinstance(findings_data, Sequence)
-        and not isinstance(findings_data, (str, bytes))
+        if isinstance(findings_data, Sequence) and not isinstance(findings_data, (str, bytes))
         else []
     )
     for entry in entries:
@@ -235,15 +235,11 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
             version=str(entry.get("version", "0.0.0")),
             direct=bool(entry.get("direct", False)),
             manifest=Path(str(entry.get("manifest", "."))),
-            metadata=(
-                dict(entry_metadata) if isinstance(entry_metadata, Mapping) else {}
-            ),
+            metadata=(dict(entry_metadata) if isinstance(entry_metadata, Mapping) else {}),
         )
         advisories = []
         raw_advisories = entry.get("advisories", [])
-        if isinstance(raw_advisories, Sequence) and not isinstance(
-            raw_advisories, (str, bytes)
-        ):
+        if isinstance(raw_advisories, Sequence) and not isinstance(raw_advisories, (str, bytes)):
             for adv in raw_advisories:
                 if not isinstance(adv, Mapping):
                     continue
@@ -265,9 +261,7 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
                 )
         signals = []
         raw_signals = entry.get("signals", [])
-        if isinstance(raw_signals, Sequence) and not isinstance(
-            raw_signals, (str, bytes)
-        ):
+        if isinstance(raw_signals, Sequence) and not isinstance(raw_signals, (str, bytes)):
             for sig in raw_signals:
                 if not isinstance(sig, Mapping):
                     continue
@@ -293,16 +287,12 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
 
     generated_at = summary.get("generated_at")
     timestamp = (
-        datetime.fromisoformat(generated_at)
-        if isinstance(generated_at, str)
-        else datetime.utcnow()
+        datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else datetime.utcnow()
     )
     managers_data = summary.get("managers", [])
     if isinstance(managers_data, str):
         managers_list: list[str] = [managers_data]
-    elif isinstance(managers_data, Sequence) and not isinstance(
-        managers_data, (str, bytes)
-    ):
+    elif isinstance(managers_data, Sequence) and not isinstance(managers_data, (str, bytes)):
         managers_list = [str(item) for item in managers_data]
     else:
         managers_list = []
@@ -351,8 +341,7 @@ def _handle_signal_summary(
                 f"{category}={count}" for category, count in summary.counts.items()
             )
             severity_display = ", ".join(
-                f"{severity}={count}"
-                for severity, count in summary.severity_totals.items()
+                f"{severity}={count}" for severity, count in summary.severity_totals.items()
             )
             console.print(f"Signals: {counts_display}", style="bold cyan")
             if severity_display:
@@ -373,9 +362,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    scan_parser = subparsers.add_parser(
-        "scan", help="Scan manifests and compute trust report"
-    )
+    scan_parser = subparsers.add_parser("scan", help="Scan manifests and compute trust report")
     scan_parser.add_argument("--path", default=".", help="Project root to scan")
     scan_parser.add_argument(
         "--manager",
@@ -399,15 +386,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print signal category and severity aggregates",
     )
-    scan_parser.add_argument(
-        "--signal-summary-output", help="Write signal summary JSON to path"
-    )
+    scan_parser.add_argument("--signal-summary-output", help="Write signal summary JSON to path")
     scan_parser.add_argument("--log-level", default="INFO", help="Logging level")
     scan_parser.set_defaults(func=cmd_scan)
 
-    upgrade_parser = subparsers.add_parser(
-        "pre-upgrade", help="Simulate a dependency upgrade"
-    )
+    upgrade_parser = subparsers.add_parser("pre-upgrade", help="Simulate a dependency upgrade")
     upgrade_parser.add_argument("--path", default=".", help="Project root")
     upgrade_parser.add_argument("--manager", help="Package manager to target")
     upgrade_parser.add_argument("--package", required=True, help="Package name")
@@ -430,23 +413,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print signal aggregates",
     )
-    report_parser.add_argument(
-        "--signal-summary-output", help="Write signal summary JSON"
-    )
+    report_parser.add_argument("--signal-summary-output", help="Write signal summary JSON")
     report_parser.add_argument("--log-level", default="INFO")
     report_parser.set_defaults(func=cmd_report)
 
-    list_parser = subparsers.add_parser(
-        "list-managers", help="List supported package managers"
-    )
+    list_parser = subparsers.add_parser("list-managers", help="List supported package managers")
     list_parser.set_defaults(func=cmd_list_managers)
 
-    diag_parser = subparsers.add_parser(
-        "diagnostics", help="Inspect local manager tooling"
-    )
-    diag_parser.add_argument(
-        "--json", action="store_true", help="Emit diagnostics as JSON"
-    )
+    diag_parser = subparsers.add_parser("diagnostics", help="Inspect local manager tooling")
+    diag_parser.add_argument("--json", action="store_true", help="Emit diagnostics as JSON")
     diag_parser.add_argument("--log-level", default="INFO")
     diag_parser.set_defaults(func=cmd_diagnostics)
 

@@ -24,9 +24,7 @@ def _finding_with_signals(category: str, severity: Severity) -> PackageFinding:
         manifest=Path("pyproject.toml"),
         metadata={},
     )
-    signal = TrustSignal(
-        category=category, severity=severity, message="msg", evidence={}
-    )
+    signal = TrustSignal(category=category, severity=severity, message="msg", evidence={})
     return PackageFinding(dependency=dependency, signals=[signal], score=0.0)
 
 
@@ -69,3 +67,21 @@ def test_report_uses_slots_and_defensive_stats(tmp_path: Path) -> None:
     exported["stats"]["dependency_count"] = 5
 
     assert report.stats["dependency_count"] == 1
+
+
+def test_report_summary_returns_defensive_copy(tmp_path: Path) -> None:
+    finding = _finding_with_signals("maintainer", Severity.MEDIUM)
+    report = Report(
+        path=tmp_path,
+        managers=["pypi"],
+        findings=[finding],
+        generated_at=datetime.utcnow(),
+        stats={"dependency_count": 1},
+    )
+
+    first = report.summary()
+    first["counts"]["medium"] = 99
+    second = report.summary()
+
+    assert first is not second
+    assert second["counts"]["medium"] == 1

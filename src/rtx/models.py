@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -135,15 +136,11 @@ class PackageFinding:
         severities = [Severity.from_score(self.score)]
         if self.advisories:
             severities.append(
-                max(
-                    self.advisories, key=lambda adv: SEVERITY_RANK[adv.severity.value]
-                ).severity
+                max(self.advisories, key=lambda adv: SEVERITY_RANK[adv.severity.value]).severity
             )
         if self.signals:
             severities.append(
-                max(
-                    self.signals, key=lambda sig: SEVERITY_RANK[sig.severity.value]
-                ).severity
+                max(self.signals, key=lambda sig: SEVERITY_RANK[sig.severity.value]).severity
             )
         return max(severities, key=lambda level: SEVERITY_RANK[level.value])
 
@@ -156,6 +153,9 @@ class Report:
     generated_at: datetime
     stats: dict[str, Any] = field(default_factory=dict)
     _signal_summary: SignalSummary | None = field(
+        init=False, default=None, repr=False, compare=False
+    )
+    _summary_cache: dict[str, Any] | None = field(
         init=False, default=None, repr=False, compare=False
     )
 
@@ -176,6 +176,9 @@ class Report:
         return 0
 
     def summary(self) -> dict[str, Any]:
+        cached = self._summary_cache
+        if cached is not None:
+            return deepcopy(cached)
         counts: dict[str, int] = {severity.value: 0 for severity in Severity}
         direct = 0
         manager_usage: Counter[str] = Counter()
@@ -186,7 +189,7 @@ class Report:
             manager_usage[finding.dependency.ecosystem] += 1
         signal_summary = self.signal_summary
         indirect = len(self.findings) - direct
-        return {
+        summary = {
             "generated_at": self.generated_at.isoformat(),
             "managers": self.managers,
             "counts": counts,
@@ -200,6 +203,8 @@ class Report:
             "signal_severity_counts": signal_summary.severity_counts,
             "signal_severity_totals": signal_summary.severity_totals,
         }
+        self._summary_cache = summary
+        return deepcopy(summary)
 
     def to_dict(self) -> dict[str, Any]:
         return {
