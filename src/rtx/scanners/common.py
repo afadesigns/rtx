@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
 from rtx.utils import detect_files, read_json, read_toml, read_yaml
@@ -62,18 +63,86 @@ def read_poetry_lock(path: Path) -> Dict[str, str]:
 
 
 def read_uv_lock(path: Path) -> Dict[str, str]:
-    data = read_json(path)
-    out: Dict[str, str] = {}
-    for entry in data.get("projects", []):
-        if isinstance(entry, dict):
-            deps = entry.get("dependencies", [])
-            for dep in deps:
-                if isinstance(dep, dict):
-                    name = dep.get("name")
-                    version = dep.get("version")
-                    if isinstance(name, str) and isinstance(version, str):
-                        out[name] = version
-    return out
+    data = read_toml(path)
+    packages = data.get("package", [])
+    if isinstance(packages, dict):
+        packages = [packages]
+
+    catalog: Dict[str, Dict[str, object]] = {}
+    for package in packages:
+        if isinstance(package, dict):
+            name = package.get("name")
+            if isinstance(name, str):
+                catalog[name] = package
+
+    direct_names: set[str] = set()
+    for package in packages:
+        if not isinstance(package, dict):
+            continue
+        source = package.get("source")
+        if isinstance(source, dict) and source.get("virtual") == ".":
+            for entry in package.get("dependencies", []) or []:
+                if isinstance(entry, dict):
+                    dep_name = entry.get("name")
+                    if isinstance(dep_name, str):
+                        direct_names.add(dep_name)
+
+    if not direct_names:
+        project = data.get("project")
+        if isinstance(project, dict):
+            for dep in project.get("dependencies", []) or []:
+                if isinstance(dep, str):
+                    try:
+                        req = Requirement(dep)
+                    except InvalidRequirement:
+                        continue
+                    direct_names.add(req.name)
+
+        dependency_groups = data.get("dependency-groups", {})
+        if isinstance(dependency_groups, dict):
+            for group_deps in dependency_groups.values():
+                if isinstance(group_deps, list):
+                    for dep in group_deps:
+                        if isinstance(dep, str):
+                            try:
+                                req = Requirement(dep)
+                            except InvalidRequirement:
+                                continue
+                            direct_names.add(req.name)
+
+    results: Dict[str, str] = {}
+    for name in sorted(direct_names):
+        version = "*"
+        package = catalog.get(name)
+        if isinstance(package, dict):
+            extracted = package.get("version")
+            if isinstance(extracted, str) and extracted:
+                version = extracted
+            else:
+                metadata = package.get("metadata")
+                if isinstance(metadata, dict):
+                    requires_dist = metadata.get("requires-dist")
+                    if isinstance(requires_dist, list):
+                        for item in requires_dist:
+                            if isinstance(item, dict) and item.get("name") == name:
+                                spec = item.get("specifier")
+                                if isinstance(spec, str) and spec:
+                                    version = spec
+                                break
+        results[name] = version
+
+    if not results:
+        for name, package in catalog.items():
+            if not isinstance(package, dict):
+                continue
+            source = package.get("source")
+            if isinstance(source, dict) and source.get("virtual") == ".":
+                continue
+            extracted = package.get("version")
+            version = extracted if isinstance(extracted, str) and extracted else "*"
+            results[name] = version
+
+    return results
 
 
 def read_requirements(path: Path) -> Dict[str, str]:

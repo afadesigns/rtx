@@ -129,3 +129,34 @@ def test_has_matching_file_handles_glob_patterns(tmp_path: Path) -> None:
     (tmp_path / "nested" / "requirements.txt").write_text("requests==2.31.0", encoding="utf-8")
     assert has_matching_file(tmp_path, ["nested/*.txt"]) is True
     assert has_matching_file(tmp_path, ["*.lock"]) is False
+
+
+def test_read_uv_lock_extracts_direct_dependencies(tmp_path: Path) -> None:
+    uv_lock = tmp_path / "uv.lock"
+    uv_lock.write_text(
+        """
+version = 1
+requires-python = ">=3.13"
+
+[[package]]
+name = "demo"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "httpx" },
+    { name = "rich" },
+]
+
+[[package]]
+name = "httpx"
+version = "0.27.2"
+
+[[package]]
+name = "rich"
+version = "13.7.1"
+""",
+        encoding="utf-8",
+    )
+
+    result = common.read_uv_lock(uv_lock)
+    assert result == {"httpx": "0.27.2", "rich": "13.7.1"}
