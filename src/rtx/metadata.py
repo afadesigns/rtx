@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from types import TracebackType
 
 import httpx
 
@@ -121,12 +122,18 @@ class MetadataClient:
         timeout: float = config.HTTP_TIMEOUT,
         retries: int = config.HTTP_RETRIES,
     ) -> None:
-        self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": config.USER_AGENT})
-        self._retry = AsyncRetry(retries=retries, delay=0.5, exceptions=(httpx.HTTPError,))
+        self._client = httpx.AsyncClient(
+            timeout=timeout, headers={"User-Agent": config.USER_AGENT}
+        )
+        self._retry = AsyncRetry(
+            retries=retries, delay=0.5, exceptions=(httpx.HTTPError,)
+        )
         self._cache: dict[str, ReleaseMetadata] = {}
         self._inflight: dict[str, asyncio.Task[ReleaseMetadata]] = {}
         self._lock = asyncio.Lock()
-        self._fetchers: dict[str, Callable[[Dependency], Awaitable[ReleaseMetadata]]] = {
+        self._fetchers: dict[
+            str, Callable[[Dependency], Awaitable[ReleaseMetadata]]
+        ] = {
             "pypi": self._fetch_pypi,
             "npm": self._fetch_npm,
             "crates": self._fetch_crates,
@@ -140,7 +147,12 @@ class MetadataClient:
     async def __aenter__(self) -> MetadataClient:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         await self.close()
 
     async def close(self) -> None:
@@ -181,7 +193,11 @@ class MetadataClient:
     async def _fetch_uncached(self, dependency: Dependency) -> ReleaseMetadata:
         fetcher = self._fetchers.get(dependency.normalized_ecosystem)
         if fetcher is not None:
-            return await self._retry(lambda fetch=fetcher: fetch(dependency))
+
+            async def _execute() -> ReleaseMetadata:
+                return await fetcher(dependency)
+
+            return await self._retry(_execute)
         return ReleaseMetadata(
             latest_release=None,
             releases_last_30d=0,
@@ -214,12 +230,15 @@ class MetadataClient:
                     if file_meta.get("yanked"):
                         continue
                     has_active_file = True
-                    timestamp = (
-                        file_meta.get("upload_time_iso_8601")
-                        or file_meta.get("upload_time")
+                    timestamp = file_meta.get("upload_time_iso_8601") or file_meta.get(
+                        "upload_time"
                     )
-                    parsed = _parse_date(timestamp if isinstance(timestamp, str) else None)
-                    if parsed is not None and (upload_time is None or parsed > upload_time):
+                    parsed = _parse_date(
+                        timestamp if isinstance(timestamp, str) else None
+                    )
+                    if parsed is not None and (
+                        upload_time is None or parsed > upload_time
+                    ):
                         upload_time = parsed
             if not has_active_file:
                 continue
@@ -229,7 +248,9 @@ class MetadataClient:
             if upload_time and (now - upload_time).days <= 30:
                 releases_last_30d += 1
         info = data.get("info", {}) if isinstance(data, dict) else {}
-        maintainer_entries = info.get("maintainers", []) if isinstance(info, dict) else []
+        maintainer_entries = (
+            info.get("maintainers", []) if isinstance(info, dict) else []
+        )
         maintainer_names: list[str] = []
         for entry in maintainer_entries:
             name: str | None = None
@@ -381,7 +402,9 @@ class MetadataClient:
             if now - released <= timedelta(days=30):
                 releases_last_30d += 1
 
-        return ReleaseMetadata(last_release, releases_last_30d, total, [], dependency.ecosystem)
+        return ReleaseMetadata(
+            last_release, releases_last_30d, total, [], dependency.ecosystem
+        )
 
     async def _fetch_rubygems(self, dependency: Dependency) -> ReleaseMetadata:
         name = dependency.name
@@ -430,13 +453,15 @@ class MetadataClient:
         if ":" not in dependency.name:
             return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
         group, artifact = dependency.name.split(":", 1)
-        params = {
-            "q": f'g:"{group}" AND a:"{artifact}"',
-            "core": "gav",
-            "rows": 50,
-            "wt": "json",
-            "sort": "timestamp desc",
-        }
+        params = httpx.QueryParams(
+            {
+                "q": f'g:"{group}" AND a:"{artifact}"',
+                "core": "gav",
+                "rows": "50",
+                "wt": "json",
+                "sort": "timestamp desc",
+            }
+        )
         response = await self._client.get(
             "https://search.maven.org/solrsearch/select",
             params=params,
@@ -477,7 +502,9 @@ class MetadataClient:
         if total == 0:
             total = int(payload.get("response", {}).get("numFound", 0))
 
-        return ReleaseMetadata(latest, releases_last_30d, total, [], dependency.ecosystem)
+        return ReleaseMetadata(
+            latest, releases_last_30d, total, [], dependency.ecosystem
+        )
 
     async def _fetch_nuget(self, dependency: Dependency) -> ReleaseMetadata:
         package_id = dependency.normalized_name
@@ -517,7 +544,9 @@ class MetadataClient:
                         if author.strip()
                     )
         maintainers = sorted({name for name in maintainers if name})
-        return ReleaseMetadata(latest, releases_last_30d, total, maintainers, dependency.ecosystem)
+        return ReleaseMetadata(
+            latest, releases_last_30d, total, maintainers, dependency.ecosystem
+        )
 
     async def _fetch_packagist(self, dependency: Dependency) -> ReleaseMetadata:
         if "/" not in dependency.name:
@@ -556,4 +585,6 @@ class MetadataClient:
                         if isinstance(name, str) and name:
                             maintainers.append(name)
         maintainers = sorted({name for name in maintainers if name})
-        return ReleaseMetadata(latest, releases_last_30d, total, maintainers, dependency.ecosystem)
+        return ReleaseMetadata(
+            latest, releases_last_30d, total, maintainers, dependency.ecosystem
+        )

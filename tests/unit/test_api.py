@@ -36,7 +36,9 @@ class _StubAdvisoryClient:
     async def __aexit__(self, exc_type, exc, tb) -> None:  # - interface compliance
         return None
 
-    async def fetch_advisories(self, dependencies: list[Dependency]) -> dict[str, list[object]]:
+    async def fetch_advisories(
+        self, dependencies: list[Dependency]
+    ) -> dict[str, list[object]]:
         return {dependency.coordinate: [] for dependency in dependencies}
 
 
@@ -50,8 +52,12 @@ class _StubPolicyEngine:
     async def close(self) -> None:
         return None
 
-    async def analyze(self, dependency: Dependency, advisories: list[object]) -> PackageFinding:
-        return PackageFinding(dependency=dependency, advisories=[], signals=[], score=0.0)
+    async def analyze(
+        self, dependency: Dependency, advisories: list[object]
+    ) -> PackageFinding:
+        return PackageFinding(
+            dependency=dependency, advisories=[], signals=[], score=0.0
+        )
 
 
 def test_merge_dependency_preserves_manifest_order(tmp_path: Path) -> None:
@@ -61,7 +67,10 @@ def test_merge_dependency_preserves_manifest_order(tmp_path: Path) -> None:
         version="1.0.0",
         direct=True,
         manifest=tmp_path / "package.json",
-        metadata={"source": "a", "manifests": [str(tmp_path / "package.json"), "extra"]},
+        metadata={
+            "source": "a",
+            "manifests": [str(tmp_path / "package.json"), "extra"],
+        },
     )
     second = Dependency(
         ecosystem="npm",
@@ -86,7 +95,9 @@ def test_merge_dependency_preserves_manifest_order(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_scan_project_async_preserves_manager_order(monkeypatch, tmp_path: Path) -> None:
+async def test_scan_project_async_preserves_manager_order(
+    monkeypatch, tmp_path: Path
+) -> None:
     primary = Dependency(
         ecosystem="npm",
         name="demo",

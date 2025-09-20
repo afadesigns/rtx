@@ -46,12 +46,12 @@ class NpmScanner(BaseScanner):
                     current_name = None
                 elif not line.startswith(" ") and ":" in line:
                     segment = line.split(":", 1)[0]
-                    if segment.startswith("\"") and segment.endswith("\""):
-                        segment = segment.strip("\"")
+                    if segment.startswith('"') and segment.endswith('"'):
+                        segment = segment.strip('"')
                     if "@" in segment:
                         current_name = segment.split("@", 1)[0]
                 elif current_name and line.strip().startswith("version "):
-                    version = line.split("\"", 2)[1]
+                    version = line.split('"', 2)[1]
                     record(current_name, version, yarn_lock)
 
         package_json = root / "package.json"

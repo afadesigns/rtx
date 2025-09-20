@@ -3,15 +3,16 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from pathlib import Path
+from typing import ClassVar
 
 from rtx.models import Dependency
 from rtx.utils import has_matching_file
 
 
 class BaseScanner(ABC):
-    manager: str
-    manifests: Sequence[str]
-    ecosystem: str
+    manager: ClassVar[str]
+    manifests: ClassVar[Sequence[str]]
+    ecosystem: ClassVar[str]
 
     def matches(self, root: Path) -> bool:
         return has_matching_file(root, self.manifests)
@@ -27,7 +28,7 @@ class BaseScanner(ABC):
         version: str,
         manifest: Path,
         direct: bool,
-        metadata: dict | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> Dependency:
         return Dependency(
             ecosystem=self.ecosystem,

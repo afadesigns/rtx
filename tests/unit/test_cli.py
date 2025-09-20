@@ -9,7 +9,14 @@ import pytest
 
 from rtx.cli import _report_from_payload, _resolve_output_path, main
 from rtx.exceptions import ReportRenderingError
-from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity, TrustSignal
+from rtx.models import (
+    Advisory,
+    Dependency,
+    PackageFinding,
+    Report,
+    Severity,
+    TrustSignal,
+)
 from rtx.system import ToolStatus
 
 
@@ -20,9 +27,13 @@ def test_resolve_output_path_table_defaults(tmp_path: Path) -> None:
 
 
 def test_resolve_output_path_requires_output() -> None:
-    with pytest.raises(ReportRenderingError, match="JSON output requires --output path"):
+    with pytest.raises(
+        ReportRenderingError, match="JSON output requires --output path"
+    ):
         _resolve_output_path("json", None)
-    with pytest.raises(ReportRenderingError, match="HTML output requires --output path"):
+    with pytest.raises(
+        ReportRenderingError, match="HTML output requires --output path"
+    ):
         _resolve_output_path("html", None)
 
 
@@ -38,27 +49,31 @@ def _sample_report(exit_code: int = 0) -> Report:
     severity = Severity.HIGH if exit_code == 2 else Severity.NONE
     finding = PackageFinding(
         dependency=dependency,
-        advisories=[
-            Advisory(
-                identifier="OSV-2024-0001",
-                source="osv.dev",
-                severity=severity,
-                summary="Example advisory",
-                references=["https://example.com"],
-            )
-        ]
-        if exit_code
-        else [],
-        signals=[
-            TrustSignal(
-                category="maintainer",
-                severity=severity,
-                message="Single maintainer",
-                evidence={"maintainers": ["solo"]},
-            )
-        ]
-        if exit_code
-        else [],
+        advisories=(
+            [
+                Advisory(
+                    identifier="OSV-2024-0001",
+                    source="osv.dev",
+                    severity=severity,
+                    summary="Example advisory",
+                    references=["https://example.com"],
+                )
+            ]
+            if exit_code
+            else []
+        ),
+        signals=(
+            [
+                TrustSignal(
+                    category="maintainer",
+                    severity=severity,
+                    message="Single maintainer",
+                    evidence={"maintainers": ["solo"]},
+                )
+            ]
+            if exit_code
+            else []
+        ),
         score=1.0 if exit_code else 0.0,
     )
     findings: list[PackageFinding] = [finding] if exit_code else []
@@ -70,7 +85,9 @@ def _sample_report(exit_code: int = 0) -> Report:
         stats={
             "dependency_count": len(findings),
             "direct_dependencies": len([f for f in findings if f.dependency.direct]),
-            "indirect_dependencies": len([f for f in findings if not f.dependency.direct]),
+            "indirect_dependencies": len(
+                [f for f in findings if not f.dependency.direct]
+            ),
             "graph_nodes": len(findings),
             "graph_edges": 0,
             "manager_usage": {"pypi": len(findings)},
@@ -83,7 +100,9 @@ def mock_logging(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("rtx.cli._configure_logging", lambda level: None, raising=False)
 
 
-def test_scan_invokes_render(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
+def test_scan_invokes_render(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
+) -> None:
     report = _sample_report(exit_code=0)
     captured: dict[str, Any] = {}
 
@@ -114,7 +133,9 @@ def test_scan_rejects_unknown_format(tmp_path: Path, capsys: Any) -> None:
     assert "invalid choice" in captured.err
 
 
-def test_scan_unknown_manager(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any) -> None:
+def test_scan_unknown_manager(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
+) -> None:
     def fail(_path: Path, managers=None):
         raise ValueError("Unknown package manager(s): foo")
 
@@ -132,7 +153,9 @@ def test_scan_requires_output_for_json(
 ) -> None:
     report = _sample_report(exit_code=0)
     monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
-    monkeypatch.setattr("rtx.reporting.render_table", lambda *_, **__: None, raising=False)
+    monkeypatch.setattr(
+        "rtx.reporting.render_table", lambda *_, **__: None, raising=False
+    )
     monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
 
     exit_code = main(["scan", "--path", str(tmp_path), "--format", "json"])
@@ -149,7 +172,9 @@ def test_scan_signal_summary_flags(
 ) -> None:
     report = _sample_report(exit_code=2)
     monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
-    monkeypatch.setattr("rtx.reporting.render_table", lambda *_, **__: None, raising=False)
+    monkeypatch.setattr(
+        "rtx.reporting.render_table", lambda *_, **__: None, raising=False
+    )
     monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
 
     exit_code = main(
@@ -326,7 +351,9 @@ def test_diagnostics_outputs_plain_text(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_diagnostics_json_output(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
-    statuses = [ToolStatus(name="pip", available=True, path="/usr/bin/pip", version="pip 25")]
+    statuses = [
+        ToolStatus(name="pip", available=True, path="/usr/bin/pip", version="pip 25")
+    ]
 
     monkeypatch.setattr(
         "rtx.cli.collect_manager_diagnostics",

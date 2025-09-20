@@ -23,10 +23,13 @@ def render_table(report: Report, *, console: Console | None = None) -> None:
     table.add_column("Advisories", style="red")
     table.add_column("Signals", style="green")
     for finding in report.findings:
-        advisories = "\n".join(
-            f"{adv.source}:{adv.identifier} ({adv.severity.value}) — {adv.summary}".strip()
-            for adv in finding.advisories
-        ) or "-"
+        advisories = (
+            "\n".join(
+                f"{adv.source}:{adv.identifier} ({adv.severity.value}) — {adv.summary}".strip()
+                for adv in finding.advisories
+            )
+            or "-"
+        )
         signals = "\n".join(_format_signal(signal) for signal in finding.signals) or "-"
         table.add_row(
             finding.dependency.coordinate,
@@ -48,15 +51,21 @@ def render_table(report: Report, *, console: Console | None = None) -> None:
     )
     signal_counts = summary.get("signal_counts", {})
     if signal_counts:
-        formatted = ", ".join(f"{category}={count}" for category, count in signal_counts.items())
+        formatted = ", ".join(
+            f"{category}={count}" for category, count in signal_counts.items()
+        )
         console.print(f"Signals: {formatted}", style="bold cyan")
     severity_totals = summary.get("signal_severity_totals", {})
     if severity_totals:
-        formatted = ", ".join(f"{severity}={count}" for severity, count in severity_totals.items())
+        formatted = ", ".join(
+            f"{severity}={count}" for severity, count in severity_totals.items()
+        )
         console.print(f"Signal severities: {formatted}", style="cyan")
     manager_usage = summary.get("manager_usage", {})
     if manager_usage:
-        formatted = ", ".join(f"{manager}={count}" for manager, count in manager_usage.items())
+        formatted = ", ".join(
+            f"{manager}={count}" for manager, count in manager_usage.items()
+        )
         console.print(f"Managers: {formatted}", style="green")
 
 
@@ -74,7 +83,9 @@ def _format_signal(signal: TrustSignal) -> str:
     evidence_parts: list[str] = []
     for key, value in evidence.items():
         if isinstance(value, dict):
-            subparts = ", ".join(f"{subkey}={subvalue}" for subkey, subvalue in value.items())
+            subparts = ", ".join(
+                f"{subkey}={subvalue}" for subkey, subvalue in value.items()
+            )
             evidence_parts.append(f"{key}={{ {subparts} }}")
         elif isinstance(value, list):
             rendered = ", ".join(str(item) for item in value)
@@ -91,7 +102,9 @@ def render_html(report: Report, *, path: Path) -> None:
         payload = report.to_dict()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            _HTML_REPORT_TEMPLATE.render(summary=payload["summary"], findings=payload["findings"]),
+            _HTML_REPORT_TEMPLATE.render(
+                summary=payload["summary"], findings=payload["findings"]
+            ),
             encoding="utf-8",
         )
     except Exception as exc:

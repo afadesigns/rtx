@@ -5,9 +5,11 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
+from typing import cast
 
 from rich.console import Console
 
@@ -28,7 +30,9 @@ def _resolve_output_path(fmt: str, output: str | None) -> Path | None:
     normalized = fmt.lower()
     if normalized in {"json", "html"}:
         if not output:
-            raise ReportRenderingError(f"{normalized.upper()} output requires --output path")
+            raise ReportRenderingError(
+                f"{normalized.upper()} output requires --output path"
+            )
         return Path(output)
     return Path(output) if output else None
 
@@ -119,7 +123,9 @@ def cmd_pre_upgrade(args: argparse.Namespace) -> int:
         async with AdvisoryClient() as advisory_client:
             advisory_map = await advisory_client.fetch_advisories([dependency])
         async with TrustPolicyEngine() as engine:
-            return await engine.analyze(dependency, advisory_map.get(dependency.coordinate, []))
+            return await engine.analyze(
+                dependency, advisory_map.get(dependency.coordinate, [])
+            )
 
     finding = asyncio.run(evaluate())
     console.print(f"Baseline: {baseline.dependency.version} → {baseline.verdict.value}")
@@ -200,40 +206,73 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     return 1 if any_failures else 0
 
 
-def _report_from_payload(payload: dict) -> Report:
+def _report_from_payload(payload: Mapping[str, object]) -> Report:
     from rtx.models import Advisory, Dependency, PackageFinding, Report, TrustSignal
 
-    summary = payload.get("summary", {})
+    summary_obj = payload.get("summary", {})
+    summary = summary_obj if isinstance(summary_obj, Mapping) else {}
     findings_data = payload.get("findings", [])
     findings: list[PackageFinding] = []
-    for entry in findings_data:
+    entries = (
+        (entry for entry in findings_data if isinstance(entry, Mapping))
+        if isinstance(findings_data, Sequence)
+        and not isinstance(findings_data, (str, bytes))
+        else []
+    )
+    for entry in entries:
+        entry_metadata = entry.get("metadata", {})
         dependency = Dependency(
-            ecosystem=entry.get("ecosystem", "unknown"),
-            name=entry.get("name", "unknown"),
-            version=entry.get("version", "0.0.0"),
-            direct=entry.get("direct", False),
-            manifest=Path(entry.get("manifest", ".")),
-            metadata=entry.get("metadata", {}),
+            ecosystem=str(entry.get("ecosystem", "unknown")),
+            name=str(entry.get("name", "unknown")),
+            version=str(entry.get("version", "0.0.0")),
+            direct=bool(entry.get("direct", False)),
+            manifest=Path(str(entry.get("manifest", "."))),
+            metadata=(
+                dict(entry_metadata) if isinstance(entry_metadata, Mapping) else {}
+            ),
         )
-        advisories = [
-            Advisory(
-                identifier=adv.get("id", "UNKNOWN"),
-                source=adv.get("source", "unknown"),
-                severity=_coerce_severity(adv.get("severity", "low")),
-                summary=adv.get("summary", ""),
-                references=adv.get("references", []),
-            )
-            for adv in entry.get("advisories", [])
-        ]
-        signals = [
-            TrustSignal(
-                category=sig.get("category", "unknown"),
-                severity=_coerce_severity(sig.get("severity", "low")),
-                message=sig.get("message", ""),
-                evidence=sig.get("evidence", {}),
-            )
-            for sig in entry.get("signals", [])
-        ]
+        advisories = []
+        raw_advisories = entry.get("advisories", [])
+        if isinstance(raw_advisories, Sequence) and not isinstance(
+            raw_advisories, (str, bytes)
+        ):
+            for adv in raw_advisories:
+                if not isinstance(adv, Mapping):
+                    continue
+                references_raw = adv.get("references", [])
+                references = (
+                    [ref for ref in references_raw if isinstance(ref, str)]
+                    if isinstance(references_raw, Sequence)
+                    and not isinstance(references_raw, (str, bytes))
+                    else []
+                )
+                advisories.append(
+                    Advisory(
+                        identifier=str(adv.get("id", "UNKNOWN")),
+                        source=str(adv.get("source", "unknown")),
+                        severity=_coerce_severity(adv.get("severity", "low")),
+                        summary=str(adv.get("summary", "")),
+                        references=references,
+                    )
+                )
+        signals = []
+        raw_signals = entry.get("signals", [])
+        if isinstance(raw_signals, Sequence) and not isinstance(
+            raw_signals, (str, bytes)
+        ):
+            for sig in raw_signals:
+                if not isinstance(sig, Mapping):
+                    continue
+                evidence = sig.get("evidence", {})
+                evidence_payload = evidence if isinstance(evidence, Mapping) else {}
+                signals.append(
+                    TrustSignal(
+                        category=str(sig.get("category", "unknown")),
+                        severity=_coerce_severity(sig.get("severity", "low")),
+                        message=str(sig.get("message", "")),
+                        evidence=dict(evidence_payload),
+                    )
+                )
         score = float(entry.get("score", 0.0) or 0.0)
         findings.append(
             PackageFinding(
@@ -250,15 +289,23 @@ def _report_from_payload(payload: dict) -> Report:
         if isinstance(generated_at, str)
         else datetime.utcnow()
     )
-    managers = summary.get("managers", [])
-    if isinstance(managers, str):
-        managers = [managers]
+    managers_data = summary.get("managers", [])
+    if isinstance(managers_data, str):
+        managers_list: list[str] = [managers_data]
+    elif isinstance(managers_data, Sequence) and not isinstance(
+        managers_data, (str, bytes)
+    ):
+        managers_list = [str(item) for item in managers_data]
+    else:
+        managers_list = []
+    stats_obj = payload.get("stats", {})
+    stats = stats_obj if isinstance(stats_obj, Mapping) else {}
     return Report(
-        path=Path(summary.get("path", ".")),
-        managers=managers,
+        path=Path(str(summary.get("path", "."))),
+        managers=managers_list,
         findings=findings,
         generated_at=timestamp,
-        stats=payload.get("stats", {}),
+        stats=dict(stats),
     )
 
 
@@ -296,7 +343,8 @@ def _handle_signal_summary(
                 f"{category}={count}" for category, count in summary.counts.items()
             )
             severity_display = ", ".join(
-                f"{severity}={count}" for severity, count in summary.severity_totals.items()
+                f"{severity}={count}"
+                for severity, count in summary.severity_totals.items()
             )
             console.print(f"Signals: {counts_display}", style="bold cyan")
             if severity_display:
@@ -315,7 +363,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    scan_parser = subparsers.add_parser("scan", help="Scan manifests and compute trust report")
+    scan_parser = subparsers.add_parser(
+        "scan", help="Scan manifests and compute trust report"
+    )
     scan_parser.add_argument("--path", default=".", help="Project root to scan")
     scan_parser.add_argument(
         "--manager",
@@ -339,11 +389,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print signal category and severity aggregates",
     )
-    scan_parser.add_argument("--signal-summary-output", help="Write signal summary JSON to path")
+    scan_parser.add_argument(
+        "--signal-summary-output", help="Write signal summary JSON to path"
+    )
     scan_parser.add_argument("--log-level", default="INFO", help="Logging level")
     scan_parser.set_defaults(func=cmd_scan)
 
-    upgrade_parser = subparsers.add_parser("pre-upgrade", help="Simulate a dependency upgrade")
+    upgrade_parser = subparsers.add_parser(
+        "pre-upgrade", help="Simulate a dependency upgrade"
+    )
     upgrade_parser.add_argument("--path", default=".", help="Project root")
     upgrade_parser.add_argument("--manager", help="Package manager to target")
     upgrade_parser.add_argument("--package", required=True, help="Package name")
@@ -366,15 +420,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print signal aggregates",
     )
-    report_parser.add_argument("--signal-summary-output", help="Write signal summary JSON")
+    report_parser.add_argument(
+        "--signal-summary-output", help="Write signal summary JSON"
+    )
     report_parser.add_argument("--log-level", default="INFO")
     report_parser.set_defaults(func=cmd_report)
 
-    list_parser = subparsers.add_parser("list-managers", help="List supported package managers")
+    list_parser = subparsers.add_parser(
+        "list-managers", help="List supported package managers"
+    )
     list_parser.set_defaults(func=cmd_list_managers)
 
-    diag_parser = subparsers.add_parser("diagnostics", help="Inspect local manager tooling")
-    diag_parser.add_argument("--json", action="store_true", help="Emit diagnostics as JSON")
+    diag_parser = subparsers.add_parser(
+        "diagnostics", help="Inspect local manager tooling"
+    )
+    diag_parser.add_argument(
+        "--json", action="store_true", help="Emit diagnostics as JSON"
+    )
     diag_parser.add_argument("--log-level", default="INFO")
     diag_parser.set_defaults(func=cmd_diagnostics)
 
@@ -384,7 +446,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    command = cast(Callable[[argparse.Namespace], int], getattr(args, "func"))
+    return command(args)
 
 
 def entrypoint() -> None:

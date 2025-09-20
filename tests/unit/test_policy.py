@@ -71,7 +71,9 @@ def test_levenshtein_rejects_negative_max_distance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_typosquat_detection_ignores_identical_name_case(monkeypatch, tmp_path) -> None:
+async def test_typosquat_detection_ignores_identical_name_case(
+    monkeypatch, tmp_path
+) -> None:
     async def fake_fetch(_dep: Dependency) -> ReleaseMetadata:
         return make_metadata(ecosystem="npm", total_releases=5)
 

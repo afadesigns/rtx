@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import ClassVar
 
 from rtx.models import Dependency
 from rtx.scanners import common
@@ -9,13 +9,13 @@ from rtx.scanners.base import BaseScanner
 
 
 class ComposerScanner(BaseScanner):
-    manager = "composer"
-    manifests = ["composer.json", "composer.lock"]
-    ecosystem = "packagist"
+    manager: ClassVar[str] = "composer"
+    manifests: ClassVar[list[str]] = ["composer.json", "composer.lock"]
+    ecosystem: ClassVar[str] = "packagist"
 
-    def scan(self, root: Path) -> List[Dependency]:
-        dependencies: Dict[str, str] = {}
-        origins: Dict[str, Path] = {}
+    def scan(self, root: Path) -> list[Dependency]:
+        dependencies: dict[str, str] = {}
+        origins: dict[str, Path] = {}
 
         composer_lock = root / "composer.lock"
         if composer_lock.exists():
@@ -25,13 +25,17 @@ class ComposerScanner(BaseScanner):
 
         composer_json = root / "composer.json"
         if composer_json.exists():
-            data = common.read_json(composer_json)  # type: ignore[attr-defined]
+            raw_data = common.read_json(composer_json)
+            data = raw_data if isinstance(raw_data, dict) else {}
             for section in ("require", "require-dev"):
                 section_data = data.get(section, {})
-                if isinstance(section_data, dict):
-                    for name, version in section_data.items():
-                        dependencies.setdefault(name, str(version))
-                        origins.setdefault(name, composer_json)
+                if not isinstance(section_data, dict):
+                    continue
+                for name, version in section_data.items():
+                    if not isinstance(name, str):
+                        continue
+                    dependencies.setdefault(name, str(version))
+                    origins.setdefault(name, composer_json)
 
         return [
             self._dependency(

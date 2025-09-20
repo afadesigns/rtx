@@ -9,7 +9,14 @@ import pytest
 from rich.console import Console
 
 from rtx.exceptions import ReportRenderingError
-from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity, TrustSignal
+from rtx.models import (
+    Advisory,
+    Dependency,
+    PackageFinding,
+    Report,
+    Severity,
+    TrustSignal,
+)
 from rtx.reporting import render, render_json, render_table
 
 
@@ -43,7 +50,9 @@ def test_render_table_includes_signal_details() -> None:
     )
 
     buffer = StringIO()
-    console = Console(file=buffer, force_terminal=False, color_system=None, width=120, record=False)
+    console = Console(
+        file=buffer, force_terminal=False, color_system=None, width=120, record=False
+    )
     render_table(report, console=console)
     output = buffer.getvalue()
 

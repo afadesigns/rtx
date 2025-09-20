@@ -31,7 +31,9 @@ def _parse_version(result: subprocess.CompletedProcess[str]) -> str | None:
     return output or None
 
 
-def probe_tool(name: str, *, version_args: Iterable[str] | None = None, timeout: float = 2.0) -> ToolStatus:
+def probe_tool(
+    name: str, *, version_args: Iterable[str] | None = None, timeout: float = 2.0
+) -> ToolStatus:
     path = which(name)
     if path is None:
         return ToolStatus(name=name, available=False)
@@ -50,7 +52,9 @@ def probe_tool(name: str, *, version_args: Iterable[str] | None = None, timeout:
         return ToolStatus(name=name, available=True, path=path, error=str(exc))
 
     if result.returncode != 0:
-        error = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+        error = (
+            result.stderr or result.stdout or f"exit code {result.returncode}"
+        ).strip()
         return ToolStatus(name=name, available=True, path=path, error=error)
 
     version = _parse_version(result)

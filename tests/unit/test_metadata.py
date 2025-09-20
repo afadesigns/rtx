@@ -43,7 +43,11 @@ def test_dedupe_names_normalizes_and_trims() -> None:
 
 
 def test_dedupe_names_preserves_order() -> None:
-    assert _dedupe_names(["One", "Two", "one", "TWO", "Three"]) == ["One", "Two", "Three"]
+    assert _dedupe_names(["One", "Two", "one", "TWO", "Three"]) == [
+        "One",
+        "Two",
+        "Three",
+    ]
 
 
 def test_release_metadata_uses_slots() -> None:
@@ -106,7 +110,9 @@ async def test_fetch_caches_concurrent_requests(monkeypatch, tmp_path: Path) -> 
     dependency = Dependency("pypi", "requests", "2.31.0", True, tmp_path)
 
     try:
-        results = await asyncio.gather(client.fetch(dependency), client.fetch(dependency))
+        results = await asyncio.gather(
+            client.fetch(dependency), client.fetch(dependency)
+        )
     finally:
         await client.close()
 
@@ -163,7 +169,8 @@ async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                         "1.0.0": [
                             {"upload_time_iso_8601": older.isoformat(), "yanked": True},
                             {
-                                "upload_time": now.replace(microsecond=0).isoformat() + "Z",
+                                "upload_time": now.replace(microsecond=0).isoformat()
+                                + "Z",
                             },
                         ],
                         "0.9.0": [
@@ -282,11 +289,7 @@ async def test_fetch_gomod_parses_metadata(monkeypatch, tmp_path: Path) -> None:
             return json_response({"Time": now})
         if path.endswith("v1.0.0.info"):
             return json_response(
-                {
-                    "Time": (
-                        datetime.utcnow() - timedelta(days=40)
-                    ).isoformat()
-                }
+                {"Time": (datetime.utcnow() - timedelta(days=40)).isoformat()}
             )
         return httpx.Response(404)
 

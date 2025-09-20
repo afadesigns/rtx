@@ -4,11 +4,42 @@ import json
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 from rtx import __version__
 from rtx.models import SEVERITY_RANK, PackageFinding, Report
 from rtx.utils import unique_preserving_order
+
+
+class ComponentEntry(TypedDict):
+    type: Literal["library"]
+    name: str
+    version: str
+    purl: str
+    scope: Literal["required", "optional"]
+    licenses: list[dict[str, object]]
+
+
+class VulnerabilityRating(TypedDict):
+    severity: str
+
+
+class VulnerabilityAffect(TypedDict):
+    ref: str
+
+
+class VulnerabilityReference(TypedDict):
+    url: str
+
+
+class VulnerabilityEntry(TypedDict, total=False):
+    id: str
+    source: dict[str, str]
+    ratings: list[VulnerabilityRating]
+    affects: list[VulnerabilityAffect]
+    description: str
+    references: list[VulnerabilityReference]
+
 
 PURL_ECOSYSTEMS = {
     "pypi": "pypi",
@@ -34,14 +65,16 @@ def _purl(finding: PackageFinding) -> str:
 
 
 def generate_sbom(report: Report) -> dict[str, object]:
-    component_index: dict[str, dict[str, object]] = {}
-    vulnerability_index: dict[tuple[str, str], dict[str, object]] = {}
+    component_index: dict[str, ComponentEntry] = {}
+    vulnerability_index: dict[tuple[str, str], VulnerabilityEntry] = {}
 
     for finding in report.findings:
         coordinate = finding.dependency.coordinate
         purl = _purl(finding)
         licenses = _normalize_licenses(finding.dependency.metadata)
-        scope = "required" if finding.dependency.direct else "optional"
+        scope: Literal["required", "optional"] = (
+            "required" if finding.dependency.direct else "optional"
+        )
 
         component = component_index.get(coordinate)
         if component is None:
@@ -56,15 +89,16 @@ def generate_sbom(report: Report) -> dict[str, object]:
         else:
             if component["scope"] != "required" and scope == "required":
                 component["scope"] = "required"
+            existing_licenses = component["licenses"]
             component["licenses"] = unique_preserving_order(
-                component["licenses"] + licenses,
+                existing_licenses + licenses,
                 key=_license_key,
             )
 
         for advisory in finding.advisories:
             key = (advisory.source, advisory.identifier)
             references = _serialize_references(advisory.references)
-            affects_entry = {"ref": purl}
+            affects_entry: VulnerabilityAffect = {"ref": purl}
             entry = vulnerability_index.get(key)
             if entry is None:
                 entry = {
@@ -78,24 +112,29 @@ def generate_sbom(report: Report) -> dict[str, object]:
                 vulnerability_index[key] = entry
             else:
                 rating = entry["ratings"][0]
-                if SEVERITY_RANK[advisory.severity.value] > SEVERITY_RANK[rating["severity"]]:
+                if (
+                    SEVERITY_RANK[advisory.severity.value]
+                    > SEVERITY_RANK[rating["severity"]]
+                ):
                     rating["severity"] = advisory.severity.value
                 if not entry.get("description") and advisory.summary:
                     entry["description"] = advisory.summary
+                affects = entry.get("affects", [])
+                references_list = entry.get("references", [])
                 entry["affects"] = unique_preserving_order(
-                    entry["affects"] + [affects_entry], key=lambda item: item["ref"]
+                    affects + [affects_entry], key=lambda item: item["ref"]
                 )
                 entry["references"] = unique_preserving_order(
-                    entry["references"] + references, key=lambda item: item["url"]
+                    references_list + references, key=lambda item: item["url"]
                 )
 
     components = [component_index[key] for key in sorted(component_index)]
-    vulnerabilities = [
-        vulnerability_index[key] for key in sorted(vulnerability_index)
-    ]
+    vulnerabilities = [vulnerability_index[key] for key in sorted(vulnerability_index)]
     for entry in vulnerabilities:
-        entry["affects"] = sorted(entry["affects"], key=lambda item: item["ref"])
-        entry["references"] = sorted(entry["references"], key=lambda item: item["url"])
+        affects = entry.get("affects", [])
+        references_list = entry.get("references", [])
+        entry["affects"] = sorted(affects, key=lambda item: item["ref"])
+        entry["references"] = sorted(references_list, key=lambda item: item["url"])
 
     return {
         "bomFormat": "CycloneDX",
@@ -178,8 +217,10 @@ def _license_key(entry: dict[str, object]) -> tuple[str, tuple[tuple[str, str], 
     return ("raw", tuple(sorted((str(k), str(v)) for k, v in entry.items())))
 
 
-def _serialize_references(raw_references: Iterable[str]) -> list[dict[str, str]]:
-    entries: list[dict[str, str]] = []
+def _serialize_references(
+    raw_references: Iterable[str],
+) -> list[VulnerabilityReference]:
+    entries: list[VulnerabilityReference] = []
     for ref in raw_references:
         if not isinstance(ref, str):
             continue

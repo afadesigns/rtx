@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Iterable
 from pathlib import Path
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
 from rtx.utils import read_json, read_toml, read_yaml
+
+__all__ = [
+    "normalize_version",
+    "load_json_dependencies",
+    "load_lock_dependencies",
+    "read_poetry_lock",
+    "read_requirements",
+    "read_uv_lock",
+    "read_pnpm_lock",
+    "read_toml",
+    "read_yaml",
+    "read_json",
+]
 
 _INLINE_COMMENT_PATTERN = re.compile(r"\s+#.*$")
 
@@ -241,6 +255,8 @@ def _parse_pnpm_package_key(key: str) -> tuple[str | None, str | None]:
     if not trimmed:
         return None, None
     base = trimmed.split("(", 1)[0]
+    name: str | None
+    version: str | None
     if base.startswith("@"):
         index = base.rfind("@")
         if index <= 0:
@@ -250,10 +266,12 @@ def _parse_pnpm_package_key(key: str) -> tuple[str | None, str | None]:
     else:
         if "@" not in base:
             return base or None, None
-        name, version = base.split("@", 1)
-    name = name.strip() if name else None
-    version = version.strip() if version else None
-    return (name or None, version or None)
+        name_part, version_part = base.split("@", 1)
+        name = name_part
+        version = version_part
+    cleaned_name = name.strip() if name else None
+    cleaned_version = version.strip() if version else None
+    return (cleaned_name or None, cleaned_version or None)
 
 
 def _clean_pnpm_version(raw: str | None) -> str | None:
@@ -450,7 +468,9 @@ def read_packages_lock(path: Path) -> dict[str, str]:
             if isinstance(info, dict) and "resolved" in info:
                 version = info.get("resolved", "0.0.0")
             else:
-                version = info.get("version", "0.0.0") if isinstance(info, dict) else "0.0.0"
+                version = (
+                    info.get("version", "0.0.0") if isinstance(info, dict) else "0.0.0"
+                )
             out[name] = version
     return out
 

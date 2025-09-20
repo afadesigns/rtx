@@ -95,6 +95,7 @@ class SignalSummary:
                 category_counts[signal.category] += 1
                 per_category_severity[signal.category][signal.severity.value] += 1
                 severity_totals[signal.severity.value] += 1
+
         def _sort_severity(data: dict[str, int]) -> dict[str, int]:
             return dict(
                 sorted(
@@ -135,11 +136,15 @@ class PackageFinding:
         severities = [Severity.from_score(self.score)]
         if self.advisories:
             severities.append(
-                max(self.advisories, key=lambda adv: SEVERITY_RANK[adv.severity.value]).severity
+                max(
+                    self.advisories, key=lambda adv: SEVERITY_RANK[adv.severity.value]
+                ).severity
             )
         if self.signals:
             severities.append(
-                max(self.signals, key=lambda sig: SEVERITY_RANK[sig.severity.value]).severity
+                max(
+                    self.signals, key=lambda sig: SEVERITY_RANK[sig.severity.value]
+                ).severity
             )
         return max(severities, key=lambda level: SEVERITY_RANK[level.value])
 

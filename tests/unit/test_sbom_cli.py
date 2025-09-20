@@ -11,7 +11,9 @@ from rtx.sbom_cli import main as sbom_main
 
 
 @pytest.mark.parametrize("fmt", ["json", "html"])
-def test_sbom_cli_writes_output(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fmt: str) -> None:
+def test_sbom_cli_writes_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fmt: str
+) -> None:
     output_path = tmp_path / ("report." + fmt)
 
     def fake_scan_project(path: Path, managers: list[str] | None = None):  # type: ignore[unused-argument]

@@ -29,9 +29,17 @@ def test_scan_project_examples(monkeypatch) -> None:
     async def fake_analyze(self, dependency: Dependency, advisories):  # type: ignore[override]
         return PackageFinding(dependency=dependency, advisories=advisories, score=0.0)
 
-    monkeypatch.setattr("rtx.advisory.AdvisoryClient.fetch_advisories", fake_fetch_advisories, raising=False)
+    monkeypatch.setattr(
+        "rtx.advisory.AdvisoryClient.fetch_advisories",
+        fake_fetch_advisories,
+        raising=False,
+    )
     monkeypatch.setattr(TrustPolicyEngine, "analyze", fake_analyze, raising=False)
-    monkeypatch.setattr("rtx.metadata.MetadataClient.fetch", lambda self, dep: fake_metadata(dep), raising=False)
+    monkeypatch.setattr(
+        "rtx.metadata.MetadataClient.fetch",
+        lambda self, dep: fake_metadata(dep),
+        raising=False,
+    )
 
     report = scan_project(project_root)
     assert report.summary()["total"] > 0

@@ -69,7 +69,13 @@ def test_chunked_supports_iterables() -> None:
 
 def test_unique_preserving_order_respects_key() -> None:
     values = ["Alpha", "beta", "ALPHA", "Beta", "gamma"]
-    assert unique_preserving_order(values) == ["Alpha", "beta", "ALPHA", "Beta", "gamma"]
+    assert unique_preserving_order(values) == [
+        "Alpha",
+        "beta",
+        "ALPHA",
+        "Beta",
+        "gamma",
+    ]
     assert unique_preserving_order(values, key=str.lower) == ["Alpha", "beta", "gamma"]
 
 
@@ -139,7 +145,9 @@ def test_has_matching_file_handles_literal_path(tmp_path: Path) -> None:
 
 def test_has_matching_file_handles_glob_patterns(tmp_path: Path) -> None:
     (tmp_path / "nested").mkdir()
-    (tmp_path / "nested" / "requirements.txt").write_text("requests==2.31.0", encoding="utf-8")
+    (tmp_path / "nested" / "requirements.txt").write_text(
+        "requests==2.31.0", encoding="utf-8"
+    )
     assert has_matching_file(tmp_path, ["nested/*.txt"]) is True
     assert has_matching_file(tmp_path, ["*.lock"]) is False
 

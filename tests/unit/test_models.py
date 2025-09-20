@@ -14,7 +14,9 @@ def _finding_with_signals(category: str, severity: Severity) -> PackageFinding:
         manifest=Path("pyproject.toml"),
         metadata={},
     )
-    signal = TrustSignal(category=category, severity=severity, message="msg", evidence={})
+    signal = TrustSignal(
+        category=category, severity=severity, message="msg", evidence={}
+    )
     return PackageFinding(dependency=dependency, signals=[signal], score=0.0)
 
 

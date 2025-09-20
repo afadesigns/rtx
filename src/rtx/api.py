@@ -5,6 +5,7 @@ from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
@@ -34,7 +35,9 @@ def _merge_dependency(existing: Dependency, new: Dependency) -> Dependency:
     )
 
 
-async def scan_project_async(path: Path, *, managers: list[str] | None = None) -> Report:
+async def scan_project_async(
+    path: Path, *, managers: list[str] | None = None
+) -> Report:
     root = path.resolve()
     scanners = get_scanners(managers)
     discovered: list[Dependency] = []
@@ -66,23 +69,30 @@ async def scan_project_async(path: Path, *, managers: list[str] | None = None) -
     findings_buffer: list[PackageFinding | None] = [None] * len(dependencies)
 
     async with TrustPolicyEngine() as engine:
+
         async def analyze_with_limit(index: int, dep: Dependency) -> None:
             async with semaphore:
                 findings_buffer[index] = await engine.analyze(
                     dep, advisory_map.get(dep.coordinate, [])
                 )
 
-        task_group = getattr(asyncio, "TaskGroup", None)
-        if task_group is not None:
-            async with task_group() as tg:  # type: ignore[operator]
+        task_group_cls = getattr(asyncio, "TaskGroup", None)
+        if task_group_cls is not None:
+            tg = cast(Any, task_group_cls())
+            async with tg:
                 for index, dep in enumerate(dependencies):
                     tg.create_task(analyze_with_limit(index, dep))
         else:
             await asyncio.gather(
-                *(analyze_with_limit(index, dep) for index, dep in enumerate(dependencies))
+                *(
+                    analyze_with_limit(index, dep)
+                    for index, dep in enumerate(dependencies)
+                )
             )
 
-    findings: list[PackageFinding] = [finding for finding in findings_buffer if finding is not None]
+    findings: list[PackageFinding] = [
+        finding for finding in findings_buffer if finding is not None
+    ]
 
     graph = Graph()
     for finding in findings:
@@ -102,7 +112,7 @@ async def scan_project_async(path: Path, *, managers: list[str] | None = None) -
     if used_managers:
         manager_list = unique_preserving_order(used_managers, key=str.casefold)
     elif managers:
-        manager_list = unique_preserving_order(managers, key=str.casefold)  # type: ignore[arg-type]
+        manager_list = unique_preserving_order(list(managers), key=str.casefold)
     else:
         manager_list = []
 

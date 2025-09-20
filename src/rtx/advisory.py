@@ -5,8 +5,10 @@ import os
 import re
 import logging
 from collections import OrderedDict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
+from types import TracebackType
+from typing import Any, cast
 
 import httpx
 
@@ -30,6 +32,7 @@ OSV_ECOSYSTEM_MAP: dict[str, str] = {
 }
 
 logger = logging.getLogger(__name__)
+
 
 def _extract_numeric_score(raw: object) -> float:
     if isinstance(raw, int | float):
@@ -78,11 +81,19 @@ def _severity_from_github(label: str | None) -> Severity:
     return mapping.get(normalized, Severity.LOW)
 
 
-def _severity_from_osv(entry: dict) -> Severity:
-    severity_entries = entry.get("severity") or []
+def _severity_from_osv(entry: Mapping[str, object]) -> Severity:
+    severity_obj = entry.get("severity")
+    severity_entries = (
+        severity_obj
+        if isinstance(severity_obj, Iterable)
+        and not isinstance(severity_obj, (str, bytes))
+        else []
+    )
     max_score = 0.0
     for item in severity_entries:
-        score = _extract_numeric_score(item.get("score")) if isinstance(item, dict) else 0.0
+        score = (
+            _extract_numeric_score(item.get("score")) if isinstance(item, dict) else 0.0
+        )
         max_score = max(max_score, score)
     if max_score >= 9.0:
         return Severity.CRITICAL
@@ -92,7 +103,11 @@ def _severity_from_osv(entry: dict) -> Severity:
         return Severity.MEDIUM
     if max_score > 0:
         return Severity.LOW
-    label = (entry.get("database_specific") or {}).get("severity")
+    database_specific = entry.get("database_specific")
+    label: str | None = None
+    if isinstance(database_specific, Mapping):
+        raw_label = database_specific.get("severity")
+        label = str(raw_label) if isinstance(raw_label, str) else None
     return _severity_from_label(label)
 
 
@@ -103,9 +118,15 @@ class AdvisoryClient:
         timeout: float = config.HTTP_TIMEOUT,
         retries: int = config.HTTP_RETRIES,
     ) -> None:
-        self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": config.USER_AGENT})
-        self._retry = AsyncRetry(retries=retries, delay=0.5, exceptions=(httpx.HTTPError,))
-        self._gh_token = os.getenv("RTX_GITHUB_TOKEN") or os.getenv(config.GITHUB_DEFAULT_TOKEN_ENV)
+        self._client = httpx.AsyncClient(
+            timeout=timeout, headers={"User-Agent": config.USER_AGENT}
+        )
+        self._retry = AsyncRetry(
+            retries=retries, delay=0.5, exceptions=(httpx.HTTPError,)
+        )
+        self._gh_token = os.getenv("RTX_GITHUB_TOKEN") or os.getenv(
+            config.GITHUB_DEFAULT_TOKEN_ENV
+        )
         self._gh_disabled = env_flag("RTX_DISABLE_GITHUB_ADVISORIES", False)
         self._osv_cache: OrderedDict[str, list[Advisory]] = OrderedDict()
         self._osv_cache_size = config.OSV_CACHE_SIZE
@@ -113,7 +134,12 @@ class AdvisoryClient:
     async def __aenter__(self) -> AdvisoryClient:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         await self.close()
 
     async def close(self) -> None:
@@ -147,9 +173,14 @@ class AdvisoryClient:
                         references=unique_preserving_order(advisory.references),
                     )
                     continue
-                references = unique_preserving_order(existing.references + advisory.references)
+                references = unique_preserving_order(
+                    existing.references + advisory.references
+                )
                 summary = existing.summary or advisory.summary
-                if SEVERITY_RANK[advisory.severity.value] > SEVERITY_RANK[existing.severity.value]:
+                if (
+                    SEVERITY_RANK[advisory.severity.value]
+                    > SEVERITY_RANK[existing.severity.value]
+                ):
                     summary = advisory.summary or summary
                     severity = advisory.severity
                 else:
@@ -171,7 +202,9 @@ class AdvisoryClient:
             )
         return combined
 
-    async def _query_osv(self, dependencies: list[Dependency]) -> dict[str, list[Advisory]]:
+    async def _query_osv(
+        self, dependencies: list[Dependency]
+    ) -> dict[str, list[Advisory]]:
         if not dependencies:
             return {}
 
@@ -196,13 +229,17 @@ class AdvisoryClient:
                 {
                     "package": {
                         "name": dep.name,
-                        "ecosystem": OSV_ECOSYSTEM_MAP.get(dep.ecosystem, dep.ecosystem),
+                        "ecosystem": OSV_ECOSYSTEM_MAP.get(
+                            dep.ecosystem, dep.ecosystem
+                        ),
                     },
                     "version": dep.version,
                 }
                 for dep in chunk_deps
             ]
-            response = await self._client.post(config.OSV_API_URL, json={"queries": queries})
+            response = await self._client.post(
+                config.OSV_API_URL, json={"queries": queries}
+            )
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
@@ -219,20 +256,30 @@ class AdvisoryClient:
             results = list(payload.get("results") or [])
             for index, dep in enumerate(chunk_deps):
                 entry = results[index] if index < len(results) else None
-                vulns = (entry or {}).get("vulns", []) if isinstance(entry, dict) else []
+                vulns = (
+                    (entry or {}).get("vulns", []) if isinstance(entry, dict) else []
+                )
                 advisories: list[Advisory] = []
                 for vuln in vulns or []:
+                    if not isinstance(vuln, Mapping):
+                        continue
                     severity = _severity_from_osv(vuln)
+                    references_payload = vuln.get("references", [])
+                    references: list[str] = []
+                    if isinstance(references_payload, Sequence) and not isinstance(
+                        references_payload, (str, bytes)
+                    ):
+                        for ref in references_payload:
+                            if isinstance(ref, Mapping):
+                                url = ref.get("url")
+                                if isinstance(url, str):
+                                    references.append(url)
                     advisory = Advisory(
-                        identifier=vuln.get("id", "UNKNOWN"),
+                        identifier=str(vuln.get("id", "UNKNOWN")),
                         source="osv.dev",
                         severity=severity,
-                        summary=vuln.get("summary", ""),
-                        references=[
-                            ref.get("url")
-                            for ref in (vuln.get("references", []) or [])
-                            if isinstance(ref, dict) and ref.get("url")
-                        ],
+                        summary=str(vuln.get("summary", "")),
+                        references=references,
                     )
                     advisories.append(advisory)
                 out[dep.coordinate] = advisories
@@ -245,21 +292,29 @@ class AdvisoryClient:
             max_concurrency = max(1, getattr(config, "OSV_MAX_CONCURRENCY", 1))
             semaphore = asyncio.Semaphore(max_concurrency)
 
-            async def run_chunk(chunk_deps: list[Dependency]) -> dict[str, list[Advisory]]:
+            async def run_chunk(
+                chunk_deps: list[Dependency],
+            ) -> dict[str, list[Advisory]]:
                 async with semaphore:
                     deps_copy = list(chunk_deps)
-                    return await self._retry(lambda deps=deps_copy: task(deps))
+
+                    async def execute() -> dict[str, list[Advisory]]:
+                        return await task(deps_copy)
+
+                    return await self._retry(execute)
 
             chunk_results: list[dict[str, list[Advisory]]] = []
 
             async def worker(chunk_deps: list[Dependency]) -> None:
                 chunk_results.append(await run_chunk(chunk_deps))
 
-            if hasattr(asyncio, "TaskGroup"):
-                async with asyncio.TaskGroup() as task_group:
+            task_group_cls = getattr(asyncio, "TaskGroup", None)
+            if task_group_cls is not None:
+                tg = cast(Any, task_group_cls())
+                async with tg:
                     for chunk in chunks:
                         deps_copy = list(chunk)
-                        task_group.create_task(worker(deps_copy))
+                        tg.create_task(worker(deps_copy))
             else:  # pragma: no cover - Python <3.11 fallback
                 await asyncio.gather(*(worker(list(chunk)) for chunk in chunks))
 
@@ -274,12 +329,17 @@ class AdvisoryClient:
                                 self._osv_cache.popitem(last=False)
                         self._osv_cache[key] = list(advisories)
 
-        return {dep.coordinate: list(aggregated.get(dep.coordinate, [])) for dep in dependencies}
+        return {
+            dep.coordinate: list(aggregated.get(dep.coordinate, []))
+            for dep in dependencies
+        }
 
     def clear_cache(self) -> None:
         self._osv_cache.clear()
 
-    async def _query_github(self, dependencies: list[Dependency]) -> dict[str, list[Advisory]]:
+    async def _query_github(
+        self, dependencies: list[Dependency]
+    ) -> dict[str, list[Advisory]]:
         query = """
         query($ecosystem: SecurityAdvisoryEcosystem!, $package: String!) {
           securityVulnerabilities(first: 20, ecosystem: $ecosystem, package: $package) {
@@ -311,22 +371,33 @@ class AdvisoryClient:
             response.raise_for_status()
             data = response.json()
             advisories: list[Advisory] = []
-            nodes = (
-                data.get("data", {})
-                .get("securityVulnerabilities", {})
-                .get("nodes", [])
+            nodes_payload = (
+                data.get("data", {}).get("securityVulnerabilities", {}).get("nodes", [])
             )
+            if isinstance(nodes_payload, Sequence) and not isinstance(
+                nodes_payload, (str, bytes)
+            ):
+                nodes = [node for node in nodes_payload if isinstance(node, Mapping)]
+            else:
+                nodes = []
             for node in nodes:
-                advisory_node = node.get("advisory", {})
+                advisory_payload = node.get("advisory")
+                advisory_node = (
+                    advisory_payload if isinstance(advisory_payload, Mapping) else {}
+                )
                 severity_label = node.get("severity") or advisory_node.get("severity")
                 severity = _severity_from_github(severity_label)
-                references = unique_preserving_order(
-                    (
-                        ref.get("url")
-                        for ref in (advisory_node.get("references", []) or [])
-                        if isinstance(ref, dict) and isinstance(ref.get("url"), str)
-                    ),
-                )
+                references_payload = advisory_node.get("references", [])
+                reference_urls: list[str] = []
+                if isinstance(references_payload, Sequence) and not isinstance(
+                    references_payload, (str, bytes)
+                ):
+                    for ref in references_payload:
+                        if isinstance(ref, Mapping):
+                            url = ref.get("url")
+                            if isinstance(url, str):
+                                reference_urls.append(url)
+                references = unique_preserving_order(reference_urls)
                 advisories.append(
                     Advisory(
                         identifier=advisory_node.get("ghsaId", "GHSA-unknown"),
@@ -344,15 +415,19 @@ class AdvisoryClient:
         async def run(dep: Dependency) -> tuple[Dependency, list[Advisory] | Exception]:
             async with semaphore:
                 try:
-                    advisories = await self._retry(lambda dep=dep: fetch(dep))
+
+                    async def execute() -> list[Advisory]:
+                        return await fetch(dep)
+
+                    advisories = await self._retry(execute)
                 except Exception as exc:
                     return dep, exc
                 return dep, advisories
 
         unique: dict[tuple[str, str], Dependency] = {}
         for dep in dependencies:
-            key = (dep.ecosystem, dep.name)
-            unique.setdefault(key, dep)
+            package_key = (dep.ecosystem, dep.name)
+            unique.setdefault(package_key, dep)
 
         tasks = [run(dep) for dep in unique.values()]
         completed = await asyncio.gather(*tasks)
@@ -363,8 +438,8 @@ class AdvisoryClient:
             per_package[(dep.ecosystem, dep.name)] = outcome
 
         for dep in dependencies:
-            key = dep.coordinate
+            coordinate_key = dep.coordinate
             package_key = (dep.ecosystem, dep.name)
             advisories = per_package.get(package_key, [])
-            results[key] = list(advisories)
+            results[coordinate_key] = list(advisories)
         return results

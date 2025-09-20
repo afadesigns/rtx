@@ -47,7 +47,9 @@ class PyPIScanner(BaseScanner):
             deps = project.get("dependencies", []) if isinstance(project, dict) else []
             _record_requirements(deps, pyproject, record)
             tool_section = data.get("tool", {}) if isinstance(data, dict) else {}
-            poetry = tool_section.get("poetry", {}) if isinstance(tool_section, dict) else {}
+            poetry = (
+                tool_section.get("poetry", {}) if isinstance(tool_section, dict) else {}
+            )
             if isinstance(poetry, dict):
                 for name, version in poetry.get("dependencies", {}).items():
                     if isinstance(name, str):

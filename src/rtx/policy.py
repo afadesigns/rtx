@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import TracebackType
 
 from rtx import config
 from rtx.metadata import MetadataClient, ReleaseMetadata
@@ -58,10 +60,14 @@ class TrustPolicyEngine:
     def __init__(self) -> None:
         top_packages_path = config.DATA_DIR / "top_packages.json"
         compromised_path = config.DATA_DIR / "compromised_maintainers.json"
-        raw_top_packages: dict[str, list[str]] = load_json_resource(top_packages_path)
+        raw_top_packages = load_json_resource(top_packages_path)
         self._top_package_pairs: dict[str, list[tuple[str, str]]] = {}
-        for ecosystem, names in raw_top_packages.items():
-            if not isinstance(names, list):
+        if isinstance(raw_top_packages, Mapping):
+            top_items: Iterable[tuple[object, object]] = raw_top_packages.items()
+        else:
+            top_items = ()
+        for ecosystem, names in top_items:
+            if not isinstance(names, Sequence):
                 continue
             cleaned = unique_preserving_order(
                 [
@@ -78,27 +84,38 @@ class TrustPolicyEngine:
                 (name, name.casefold()) for name in cleaned
             ]
         compromised_entries = load_json_resource(compromised_path)
-        self._compromised_index: dict[tuple[str, str], dict[str, str]] = {}
-        for entry in compromised_entries:
-            if not isinstance(entry, dict):
-                continue
-            ecosystem = entry.get("ecosystem")
-            package = entry.get("package")
-            if not ecosystem or not package:
-                continue
-            self._compromised_index[(str(ecosystem).casefold(), str(package).casefold())] = entry
+        self._compromised_index: dict[tuple[str, str], dict[str, object]] = {}
+        if isinstance(compromised_entries, Sequence):
+            for entry in compromised_entries:
+                if not isinstance(entry, Mapping):
+                    continue
+                ecosystem = entry.get("ecosystem")
+                package = entry.get("package")
+                if not isinstance(ecosystem, str) or not isinstance(package, str):
+                    continue
+                key = (ecosystem.casefold(), package.casefold())
+                self._compromised_index[key] = dict(entry)
         self._metadata_client = MetadataClient()
 
     async def __aenter__(self) -> TrustPolicyEngine:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         await self.close()
 
-    async def analyze(self, dependency: Dependency, advisories: list[Advisory]) -> PackageFinding:
+    async def analyze(
+        self, dependency: Dependency, advisories: list[Advisory]
+    ) -> PackageFinding:
         metadata = await self._metadata_client.fetch(dependency)
         signals = self._derive_signals(dependency, metadata)
-        score = max((SEVERITY_SCORE[advisory.severity] for advisory in advisories), default=0.0)
+        score = max(
+            (SEVERITY_SCORE[advisory.severity] for advisory in advisories), default=0.0
+        )
         for signal in signals:
             score = max(score, SEVERITY_SCORE.get(signal.severity, 0.0))
         finding = PackageFinding(
@@ -194,7 +211,9 @@ class TrustPolicyEngine:
             )
         # Compromised maintainers dataset
         ecosystem_key = dependency.normalized_ecosystem
-        compromised = self._compromised_index.get((ecosystem_key, dependency.normalized_name))
+        compromised = self._compromised_index.get(
+            (ecosystem_key, dependency.normalized_name)
+        )
         if compromised:
             signals.append(
                 TrustSignal(

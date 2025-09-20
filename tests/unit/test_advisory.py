@@ -25,11 +25,15 @@ class _FakeResponse:
 
 
 @pytest.mark.asyncio
-async def test_osv_queries_use_expected_ecosystem_names(monkeypatch, tmp_path: Path) -> None:
+async def test_osv_queries_use_expected_ecosystem_names(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = AdvisoryClient()
     captured: list[dict] = []
 
-    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+    async def fake_post(
+        url: str, *, json: dict | None = None, **_: object
+    ) -> _FakeResponse:
         assert json is not None
         captured.append(json)
         results = {"results": [{} for _ in json["queries"]]}
@@ -59,7 +63,9 @@ async def test_osv_query_skips_on_client_error(monkeypatch, tmp_path: Path) -> N
 
     class _Failure:
         def raise_for_status(self) -> None:
-            raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
+            raise httpx.HTTPStatusError(
+                "Bad Request", request=request, response=response
+            )
 
         def json(self) -> dict:
             return {}
@@ -84,7 +90,9 @@ async def test_osv_query_deduplicates_dependencies(monkeypatch, tmp_path: Path) 
     client = AdvisoryClient()
     calls = 0
 
-    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+    async def fake_post(
+        url: str, *, json: dict | None = None, **_: object
+    ) -> _FakeResponse:
         nonlocal calls
         calls += 1
         results = {
@@ -193,7 +201,9 @@ async def test_osv_query_uses_cache(monkeypatch, tmp_path: Path) -> None:
     client = AdvisoryClient()
     calls = 0
 
-    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+    async def fake_post(
+        url: str, *, json: dict | None = None, **_: object
+    ) -> _FakeResponse:
         nonlocal calls
         calls += 1
         results = {
@@ -238,7 +248,9 @@ async def test_osv_query_respects_disable_flag(monkeypatch, tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_fetch_advisories_respects_disable_flag(monkeypatch, tmp_path: Path) -> None:
+async def test_fetch_advisories_respects_disable_flag(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("RTX_DISABLE_GITHUB_ADVISORIES", "1")
     monkeypatch.setattr(config, "OSV_CACHE_SIZE", 0)
     client = AdvisoryClient()
@@ -274,7 +286,9 @@ async def test_osv_cache_lru_eviction(monkeypatch, tmp_path: Path) -> None:
     client = AdvisoryClient()
     calls = 0
 
-    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+    async def fake_post(
+        url: str, *, json: dict | None = None, **_: object
+    ) -> _FakeResponse:
         nonlocal calls
         calls += 1
         return _FakeResponse(
@@ -316,7 +330,9 @@ async def test_osv_batch_size_respects_config(monkeypatch, tmp_path: Path) -> No
     calls = 0
     batch_lengths: list[int] = []
 
-    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+    async def fake_post(
+        url: str, *, json: dict | None = None, **_: object
+    ) -> _FakeResponse:
         nonlocal calls
         calls += 1
         assert json is not None
@@ -326,8 +342,7 @@ async def test_osv_batch_size_respects_config(monkeypatch, tmp_path: Path) -> No
     monkeypatch.setattr(client._client, "post", fake_post)
 
     deps = [
-        Dependency("pypi", f"pkg-{idx}", "1.0.0", True, tmp_path)
-        for idx in range(3)
+        Dependency("pypi", f"pkg-{idx}", "1.0.0", True, tmp_path) for idx in range(3)
     ]
 
     try:
@@ -345,7 +360,9 @@ async def test_clear_cache_empties_entries(monkeypatch, tmp_path: Path) -> None:
     client = AdvisoryClient()
     calls = 0
 
-    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+    async def fake_post(
+        url: str, *, json: dict | None = None, **_: object
+    ) -> _FakeResponse:
         nonlocal calls
         calls += 1
         return _FakeResponse({"results": [{}]})
@@ -364,7 +381,9 @@ async def test_clear_cache_empties_entries(monkeypatch, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_advisories_deduplicates_and_merges(monkeypatch, tmp_path: Path) -> None:
+async def test_fetch_advisories_deduplicates_and_merges(
+    monkeypatch, tmp_path: Path
+) -> None:
     client = AdvisoryClient()
     client._gh_token = uuid.uuid4().hex
     dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
@@ -429,4 +448,7 @@ async def test_fetch_advisories_deduplicates_and_merges(monkeypatch, tmp_path: P
         "https://mirror.example/ghsa-123",
         "https://osv.dev/ghsa-123",
     ]
-    assert any(adv.source == "github" and adv.severity is Severity.CRITICAL for adv in advisories)
+    assert any(
+        adv.source == "github" and adv.severity is Severity.CRITICAL
+        for adv in advisories
+    )

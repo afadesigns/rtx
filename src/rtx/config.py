@@ -69,7 +69,12 @@ GITHUB_DEFAULT_TOKEN_ENV = os.getenv("RTX_GITHUB_DEFAULT_TOKEN_ENV", "GITHUB_TOK
 
 SUPPORTED_MANAGERS: dict[str, dict[str, list[str]]] = {
     "npm": {
-        "manifests": ["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"],
+        "manifests": [
+            "package.json",
+            "package-lock.json",
+            "yarn.lock",
+            "pnpm-lock.yaml",
+        ],
         "ecosystem": ["npm"],
     },
     "pypi": {

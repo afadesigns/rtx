@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import ClassVar
 
 from rtx.models import Dependency
 from rtx.scanners import common
@@ -10,13 +10,13 @@ from rtx.utils import detect_files
 
 
 class NuGetScanner(BaseScanner):
-    manager = "nuget"
-    manifests = ["packages.lock.json", "*.csproj", "*.fsproj"]
-    ecosystem = "nuget"
+    manager: ClassVar[str] = "nuget"
+    manifests: ClassVar[list[str]] = ["packages.lock.json", "*.csproj", "*.fsproj"]
+    ecosystem: ClassVar[str] = "nuget"
 
-    def scan(self, root: Path) -> List[Dependency]:
-        dependencies: Dict[str, str] = {}
-        origins: Dict[str, Path] = {}
+    def scan(self, root: Path) -> list[Dependency]:
+        dependencies: dict[str, str] = {}
+        origins: dict[str, Path] = {}
 
         lock = root / "packages.lock.json"
         if lock.exists():
@@ -30,13 +30,24 @@ class NuGetScanner(BaseScanner):
 
                 tree = ET.parse(path)
                 root_tag = tree.getroot()
-                namespace = "" if not root_tag.tag.startswith("{") else root_tag.tag.split("}", 1)[0] + "}"
+                namespace = (
+                    ""
+                    if not root_tag.tag.startswith("{")
+                    else root_tag.tag.split("}", 1)[0] + "}"
+                )
                 for package_ref in root_tag.findall(f".//{namespace}PackageReference"):
-                    name = package_ref.attrib.get("Include")
-                    version = package_ref.attrib.get("Version") or package_ref.findtext(f"{namespace}Version")
-                    if name and version:
-                        dependencies.setdefault(name, version)
-                        origins.setdefault(name, path)
+                    raw_name = package_ref.attrib.get("Include")
+                    raw_version = package_ref.attrib.get("Version")
+                    if raw_version is None:
+                        raw_version = package_ref.findtext(f"{namespace}Version")
+                    if not raw_name or not raw_version:
+                        continue
+                    name = raw_name.strip()
+                    version = raw_version.strip()
+                    if not name or not version:
+                        continue
+                    dependencies.setdefault(name, version)
+                    origins.setdefault(name, path)
 
         return [
             self._dependency(

@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 import textwrap
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Sequence
@@ -12,18 +13,18 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, TypeVar
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python <3.11
-    import tomli as tomllib  # type: ignore[assignment]
+else:  # pragma: no cover - Python <3.11
+    import tomli as tomllib
 
 import yaml
 
 T = TypeVar("T")
 
-try:  # Python 3.12+
+if sys.version_info >= (3, 12):  # Python 3.12+
     from itertools import batched
-except ImportError:  # pragma: no cover - fallback for Python <3.12
+else:  # pragma: no cover - fallback for Python <3.12
     from itertools import islice as _islice
 
     def batched(iterable: Iterable[T], size: int) -> Iterable[tuple[T, ...]]:
