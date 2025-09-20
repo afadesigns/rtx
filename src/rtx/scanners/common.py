@@ -395,33 +395,47 @@ def read_pnpm_lock(path: Path) -> dict[str, str]:
 
 
 _INCLUDE_FLAGS = {
-    "-r",
-    "--requirement",
-    "-c",
-    "--constraint",
+    "-r": "requirement",
+    "--requirement": "requirement",
+    "-c": "constraint",
+    "--constraint": "constraint",
+}
+
+_INCLUDE_PREFIXES = {
+    "--requirement=": "requirement",
+    "--constraint=": "constraint",
 }
 
 
-def _extract_include_targets(tokens: list[str]) -> list[str]:
-    targets: list[str] = []
+def _extract_include_directives(tokens: list[str]) -> list[tuple[str, str]]:
+    directives: list[tuple[str, str]] = []
     index = 0
     length = len(tokens)
     while index < length:
         token = tokens[index]
-        if token in _INCLUDE_FLAGS:
+        directive = _INCLUDE_FLAGS.get(token)
+        if directive is not None:
             if index + 1 < length:
-                targets.append(tokens[index + 1])
+                directives.append((directive, tokens[index + 1]))
             index += 2
             continue
-        if token.startswith("--requirement=") or token.startswith("--constraint="):
-            _, value = token.split("=", 1)
-            if value:
-                targets.append(value)
+        for prefix, kind in _INCLUDE_PREFIXES.items():
+            if token.startswith(prefix):
+                value = token[len(prefix) :]
+                if value:
+                    directives.append((kind, value))
+                break
         index += 1
-    return targets
+    return directives
 
 
-def read_requirements(path: Path, *, _seen: set[Path] | None = None) -> dict[str, str]:
+def read_requirements(
+    path: Path,
+    *,
+    _seen: set[Path] | None = None,
+    context: dict[str, set[str]] | None = None,
+    kind: str = "requirement",
+) -> dict[str, str]:
     if _seen is None:
         _seen = set()
     resolved: dict[str, str] = {}
@@ -445,21 +459,30 @@ def read_requirements(path: Path, *, _seen: set[Path] | None = None) -> dict[str
         except ValueError:
             tokens = []
 
-        targets = _extract_include_targets(tokens)
-        if targets:
-            for target in targets:
+        directives = _extract_include_directives(tokens)
+        if directives:
+            for directive_kind, target in directives:
                 candidate = (absolute_path.parent / target).resolve()
                 if not candidate.exists():
                     continue
-                nested = read_requirements(candidate, _seen=_seen)
+                nested = read_requirements(
+                    candidate,
+                    _seen=_seen,
+                    context=context,
+                    kind=directive_kind,
+                )
                 for name, version in nested.items():
                     merge_dependency_version(resolved, name, version)
+                    if context is not None:
+                        context.setdefault(name, set()).add(directive_kind)
             continue
 
         direct_lines.append(raw_line)
 
     for name, version in _parse_requirement_lines(direct_lines).items():
         merge_dependency_version(resolved, name, version)
+        if context is not None:
+            context.setdefault(name, set()).add(kind)
 
     return resolved
 

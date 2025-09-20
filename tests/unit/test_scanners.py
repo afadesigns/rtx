@@ -105,6 +105,29 @@ def test_pypi_scanner_handles_optional_dependencies(tmp_path: Path) -> None:
     assert sphinx.metadata["extras"] == ["docs"]
 
 
+def test_pypi_scanner_captures_markers_and_requested_extras(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        textwrap.dedent(
+            """
+            [project]
+            name = "demo"
+            version = "0.1.0"
+            dependencies = ["httpx[socks]==0.27.0 ; python_version < '3.13'"]
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = PyPIScanner()
+    packages = {dep.name: dep for dep in scanner.scan(project)}
+
+    httpx = packages["httpx"]
+    assert httpx.metadata["markers"] == ['python_version < "3.13"']
+    assert httpx.metadata["requires_extras"] == ["socks"]
+
+
 def test_pypi_scanner_reads_poetry_groups(tmp_path: Path) -> None:
     project = tmp_path / "demo"
     project.mkdir()
@@ -139,6 +162,79 @@ def test_pypi_scanner_reads_poetry_groups(tmp_path: Path) -> None:
     assert mkdocs.metadata["scope"] == "group:docs"
     assert mkdocs.metadata["optional"] is True
     assert mkdocs.metadata["extras"] == ["docs"]
+
+
+def test_pypi_scanner_marks_constraints_indirect(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    requirements = project / "requirements.txt"
+    base = project / "base.txt"
+    constraints = project / "constraints.txt"
+
+    requirements.write_text("-r base.txt\n-c constraints.txt\n", encoding="utf-8")
+    base.write_text("requests==2.31.0\n", encoding="utf-8")
+    constraints.write_text("rich==13.7.0\nrequests==2.31.0\n", encoding="utf-8")
+
+    scanner = PyPIScanner()
+    packages = {dep.name: dep for dep in scanner.scan(project)}
+
+    requests_dep = packages["requests"]
+    assert requests_dep.direct is True
+    assert requests_dep.metadata["constraint"] is True
+    assert requests_dep.version == "2.31.0"
+
+    rich_dep = packages["rich"]
+    assert rich_dep.direct is False
+    assert rich_dep.metadata["constraint"] is True
+    assert rich_dep.metadata["scope"] == "constraints"
+    assert rich_dep.version == "13.7.0"
+
+
+def test_pypi_scanner_reads_uv_toml(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "uv.toml").write_text(
+        textwrap.dedent(
+            """
+            [dependencies]
+            httpx = "0.27.0"
+
+            [dev-dependencies]
+            pytest = { version = "^7.0" }
+
+            [optional-dependencies]
+            docs = ["mkdocs>=1.5"]
+
+            [tool.uv.optional-dependencies]
+            cli = ["typer>=0.12"]
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = PyPIScanner()
+    packages = {dep.name: dep for dep in scanner.scan(project)}
+
+    httpx = packages["httpx"]
+    assert httpx.direct is True
+    assert httpx.metadata["source"] == "uv.toml"
+    assert httpx.metadata.get("optional") is not True
+
+    pytest_dep = packages["pytest"]
+    assert pytest_dep.direct is True
+    assert pytest_dep.metadata["optional"] is True
+    assert pytest_dep.metadata["extras"] == ["dev"]
+
+    mkdocs = packages["mkdocs"]
+    assert mkdocs.direct is True
+    assert mkdocs.metadata["optional"] is True
+    assert mkdocs.metadata["extras"] == ["docs"]
+    assert mkdocs.metadata["scope"] == "optional:docs"
+
+    typer = packages["typer"]
+    assert typer.direct is True
+    assert typer.metadata["optional"] is True
+    assert typer.metadata["extras"] == ["cli"]
 
 
 def test_npm_scanner_reads_package_lock(tmp_path: Path) -> None:
