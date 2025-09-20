@@ -30,6 +30,22 @@ SCANNER_CLASSES: dict[str, type[BaseScanner]] = {
     "docker": DockerScanner,
 }
 
+SCANNER_ALIASES: dict[str, str] = {
+    "pip": "pypi",
+    "pip3": "pypi",
+    "python": "pypi",
+    "python3": "pypi",
+    "poetry": "pypi",
+    "uv": "pypi",
+    "node": "npm",
+    "nodejs": "npm",
+    "yarn": "npm",
+    "gem": "rubygems",
+    "ruby": "rubygems",
+    "rust": "cargo",
+    "gomod": "go",
+}
+
 
 def get_scanners(names: list[str] | None = None) -> list[BaseScanner]:
     selected = (
@@ -43,10 +59,11 @@ def get_scanners(names: list[str] | None = None) -> list[BaseScanner]:
     seen: set[str] = set()
     for raw_name in selected:
         normalized = raw_name.casefold()
-        if normalized in seen:
+        canonical = SCANNER_ALIASES.get(normalized, normalized)
+        if canonical in seen:
             continue
-        seen.add(normalized)
-        cls = SCANNER_CLASSES.get(normalized)
+        seen.add(canonical)
+        cls = SCANNER_CLASSES.get(canonical)
         if cls is None:
             unknown.append(raw_name)
             continue

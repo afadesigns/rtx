@@ -1,11 +1,101 @@
 from __future__ import annotations
 
+import re
+import shlex
 from pathlib import Path
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
 from rtx.utils import read_json, read_toml, read_yaml
+
+_INLINE_COMMENT_PATTERN = re.compile(r"\s+#.*$")
+
+
+def _strip_inline_comment(line: str) -> str:
+    """Remove trailing inline comments that are prefixed by whitespace."""
+    return _INLINE_COMMENT_PATTERN.sub("", line).strip()
+
+
+def _parse_requirement_line(line: str) -> tuple[str, str] | None:
+    cleaned = _strip_inline_comment(line)
+    if not cleaned or cleaned.startswith("#"):
+        return None
+    if cleaned.startswith("-"):
+        return None
+    try:
+        requirement = Requirement(cleaned)
+    except InvalidRequirement:
+        if "==" in cleaned:
+            name, version = cleaned.split("==", 1)
+            return name.strip(), version.strip() or "*"
+        return None
+    name = requirement.name
+    if requirement.url:
+        version = f"@ {requirement.url}"
+    else:
+        specifier = requirement.specifier
+        if specifier:
+            specs = list(specifier)
+            if len(specs) == 1 and specs[0].operator == "==":
+                version = specs[0].version
+            else:
+                version = str(specifier)
+        else:
+            version = "*"
+    return name, version
+
+
+def _parse_requirement_lines(lines: Iterable[str]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    for raw_line in lines:
+        parsed = _parse_requirement_line(raw_line)
+        if parsed is None:
+            continue
+        name, version = parsed
+        if name not in resolved:
+            resolved[name] = version
+    return resolved
+
+
+def _parse_conda_dependency(entry: str) -> tuple[str, str] | None:
+    candidate = entry.strip()
+    if not candidate or candidate.startswith("#"):
+        return None
+    if "::" in candidate:
+        _, candidate = candidate.split("::", 1)
+        candidate = candidate.strip()
+    try:
+        requirement = Requirement(candidate)
+    except InvalidRequirement:
+        pass
+    else:
+        if requirement.url:
+            version = f"@ {requirement.url}"
+        else:
+            specifier = requirement.specifier
+            if specifier:
+                specs = list(specifier)
+                if len(specs) == 1 and specs[0].operator == "==":
+                    version = specs[0].version
+                else:
+                    version = str(specifier)
+            else:
+                version = "*"
+        return requirement.name, version
+    if "=" in candidate:
+        parts = [segment.strip() for segment in candidate.split("=") if segment.strip()]
+        if not parts:
+            return None
+        name = parts[0]
+        version = parts[1] if len(parts) >= 2 else "*"
+        return name, version or "*"
+    pieces = candidate.split()
+    if not pieces:
+        return None
+    name = pieces[0]
+    version = " ".join(pieces[1:]) if len(pieces) > 1 else "*"
+    return name, version or "*"
 
 
 def normalize_version(raw: str) -> str:
@@ -230,17 +320,7 @@ def read_pnpm_lock(path: Path) -> dict[str, str]:
 
 
 def read_requirements(path: Path) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if "==" in stripped:
-            name, version = stripped.split("==", 1)
-            out[name.strip()] = version.strip()
-        else:
-            out[stripped] = "*"
-    return out
+    return _parse_requirement_lines(path.read_text(encoding="utf-8").splitlines())
 
 
 def read_gemfile_lock(path: Path) -> dict[str, str]:
@@ -330,16 +410,18 @@ def read_environment_yml(path: Path) -> dict[str, str]:
     deps = data.get("dependencies", [])
     out: dict[str, str] = {}
     for entry in deps:
-        if isinstance(entry, str) and "=" in entry:
-            name, version = entry.split("=", 1)
-            out[name] = version
-        elif isinstance(entry, dict) and "pip" in entry:
-            for package in entry["pip"]:
-                if "==" in package:
-                    name, version = package.split("==", 1)
-                    out[name] = version
-                else:
-                    out[package] = "*"
+        if isinstance(entry, str):
+            parsed = _parse_conda_dependency(entry)
+            if parsed is None:
+                continue
+            name, version = parsed
+            out.setdefault(name, version)
+        elif isinstance(entry, dict):
+            pip_section = entry.get("pip")
+            if isinstance(pip_section, list):
+                pip_requirements = _parse_requirement_lines(pip_section)
+                for name, version in pip_requirements.items():
+                    out.setdefault(name, version)
     return out
 
 
@@ -375,21 +457,143 @@ def read_packages_lock(path: Path) -> dict[str, str]:
 
 def read_dockerfile(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("RUN"):
-            for segment in line.split("&&"):
-                segment = segment.strip()
-                if "pip install" in segment:
-                    packages = segment.split("pip install", 1)[1].strip().split()
-                    for package in packages:
-                        if "==" in package:
-                            name, version = package.split("==", 1)
-                            out[f"pypi:{name}"] = version
-                if "npm install" in segment:
-                    packages = segment.split("npm install", 1)[1].strip().split()
-                    for package in packages:
-                        if "@" in package:
-                            name, version = package.split("@", 1)
-                            out[f"npm:{name}"] = version
+    lines = path.read_text(encoding="utf-8").splitlines()
+    commands: list[str] = []
+    in_continuation = False
+    current: list[str] = []
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if in_continuation:
+            fragment = stripped.rstrip("\\").strip()
+            if fragment:
+                current.append(fragment)
+            if not stripped.endswith("\\"):
+                commands.append(" ".join(current))
+                current = []
+                in_continuation = False
+            continue
+        parts = stripped.split(maxsplit=1)
+        if parts and parts[0].lower() == "run":
+            body = parts[1] if len(parts) > 1 else ""
+            body = body.strip()
+            if stripped.endswith("\\"):
+                in_continuation = True
+                current = [body.rstrip("\\").strip()]
+            else:
+                commands.append(body)
+
+    if current:
+        commands.append(" ".join(current))
+
+    for command in commands:
+        for segment in re.split(r"&&|;", command):
+            segment = segment.strip()
+            if not segment:
+                continue
+            tokens = shlex.split(segment)
+            if not tokens:
+                continue
+
+            pip_start = _pip_install_start(tokens)
+            if pip_start is not None:
+                idx = pip_start
+                while idx < len(tokens):
+                    token = tokens[idx]
+                    if token.startswith("-"):
+                        if token in _PIP_FLAGS_WITH_ARGS and idx + 1 < len(tokens):
+                            idx += 2
+                        else:
+                            idx += 1
+                        continue
+                    parsed = _parse_requirement_line(token)
+                    idx += 1
+                    if parsed is None:
+                        continue
+                    name, version = parsed
+                    if name:
+                        out.setdefault(f"pypi:{name}", version)
+                continue
+
+            npm_start = _npm_install_start(tokens)
+            if npm_start is not None:
+                idx = npm_start
+                while idx < len(tokens):
+                    token = tokens[idx]
+                    if token.startswith("-"):
+                        if token in _NPM_FLAGS_WITH_ARGS and idx + 1 < len(tokens):
+                            idx += 2
+                        else:
+                            idx += 1
+                        continue
+                    npm_parsed = _parse_npm_token(token)
+                    idx += 1
+                    if npm_parsed is None:
+                        continue
+                    name, version = npm_parsed
+                    out.setdefault(f"npm:{name}", version)
+
     return out
+
+
+def _pip_install_start(tokens: list[str]) -> int | None:
+    if len(tokens) >= 2 and tokens[0] in {"pip", "pip3"} and tokens[1] == "install":
+        return 2
+    if (
+        len(tokens) >= 4
+        and tokens[0].startswith("python")
+        and tokens[1] == "-m"
+        and tokens[2] == "pip"
+        and tokens[3] == "install"
+    ):
+        return 4
+    return None
+
+
+def _npm_install_start(tokens: list[str]) -> int | None:
+    if len(tokens) >= 2 and tokens[0] == "npm" and tokens[1] == "install":
+        return 2
+    return None
+
+
+def _parse_npm_token(token: str) -> tuple[str, str] | None:
+    cleaned = token.strip()
+    if not cleaned or cleaned.startswith("-"):
+        return None
+    if cleaned.startswith((".", "/")):
+        return None
+    if cleaned.startswith(("file:", "git+", "http://", "https://")):
+        return None
+    name = cleaned
+    version = "*"
+    if cleaned.startswith("@"):
+        index = cleaned.rfind("@")
+        if index > 0:
+            name = cleaned[:index]
+            remainder = cleaned[index + 1 :]
+            version = remainder or "*"
+    elif "@" in cleaned:
+        name, remainder = cleaned.split("@", 1)
+        version = remainder or "*"
+    return name, version
+
+
+_PIP_FLAGS_WITH_ARGS = {
+    "-r",
+    "--requirement",
+    "--requirements",
+    "-c",
+    "--constraint",
+    "--trusted-host",
+    "--index-url",
+    "--extra-index-url",
+    "--find-links",
+}
+
+
+_NPM_FLAGS_WITH_ARGS = {
+    "--prefix",
+    "--registry",
+}

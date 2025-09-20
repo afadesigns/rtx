@@ -103,3 +103,34 @@ def test_get_scanners_deduplicates_input_order() -> None:
     scanners = get_scanners(["pypi", "npm", "pypi", "npm"])
     names = [type(scanner).__name__ for scanner in scanners]
     assert names == ["PyPIScanner", "NpmScanner"]
+
+
+def test_get_scanners_alias_support() -> None:
+    scanners = get_scanners(["pip", "node", "gem"])
+    names = [type(scanner).__name__ for scanner in scanners]
+    assert names == ["PyPIScanner", "NpmScanner", "RubyGemsScanner"]
+
+
+def test_pypi_scanner_handles_pipfile_tables(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "Pipfile").write_text(
+        textwrap.dedent(
+            """
+            [packages]
+            requests = {version = "==2.31.0", extras = ["socks"]}
+            local = {path = ".", editable = true}
+
+            [dev-packages]
+            rich = "*"
+            """
+        ),
+        encoding="utf-8",
+    )
+    scanner = PyPIScanner()
+    packages = scanner.scan(project)
+
+    versions = {dep.name: dep.version for dep in packages}
+    assert versions["requests"] == "2.31.0"
+    assert versions["rich"] == "*"
+    assert "local" not in versions or versions["local"].startswith("@ ")

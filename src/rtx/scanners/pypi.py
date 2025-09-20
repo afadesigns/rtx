@@ -4,6 +4,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import ClassVar
 
+from packaging.requirements import InvalidRequirement, Requirement
+
 from rtx.models import Dependency
 from rtx.scanners import common
 from rtx.scanners.base import BaseScanner
@@ -49,7 +51,7 @@ class PyPIScanner(BaseScanner):
             if isinstance(poetry, dict):
                 for name, version in poetry.get("dependencies", {}).items():
                     if isinstance(name, str):
-                        record(name, str(version), pyproject)
+                        record(name, _coerce_version_spec(version), pyproject)
 
         poetry_lock = root / "poetry.lock"
         if poetry_lock.exists():
@@ -76,9 +78,12 @@ class PyPIScanner(BaseScanner):
         if pipfile.exists():
             data = common.read_toml(pipfile)
             for section in ("packages", "dev-packages"):
-                for name, version in data.get(section, {}).items():
+                section_data = data.get(section, {})
+                if not isinstance(section_data, dict):
+                    continue
+                for name, version in section_data.items():
                     if isinstance(name, str):
-                        record(name, str(version), pipfile)
+                        record(name, _coerce_version_spec(version), pipfile)
 
         results: list[Dependency] = []
         for name, version in sorted(dependencies.items()):
@@ -103,7 +108,49 @@ def _record_requirements(
     for dependency in entries:
         if not isinstance(dependency, str):
             continue
-        parts = dependency.split("==", 1)
-        name = parts[0].strip()
-        version = parts[1].strip() if len(parts) == 2 else "*"
-        record(name, version, source)
+        try:
+            requirement = Requirement(dependency)
+        except InvalidRequirement:
+            name = dependency.strip()
+            if name:
+                record(name, "*", source)
+            continue
+        if requirement.url:
+            version = f"@ {requirement.url}"
+        else:
+            specifier = requirement.specifier
+            if specifier:
+                specs = list(specifier)
+                if len(specs) == 1 and specs[0].operator == "==":
+                    version = specs[0].version
+                else:
+                    version = str(specifier)
+            else:
+                version = "*"
+        record(requirement.name, version, source)
+
+
+def _coerce_version_spec(value: object) -> str:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("==") and len(stripped) > 2:
+            return stripped[2:]
+        return stripped or "*"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, dict):
+        for key in ("version", "specifier"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate:
+                normalized = _coerce_version_spec(candidate)
+                if normalized:
+                    return normalized
+        for key in ("ref", "tag", "rev", "branch"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate:
+                return candidate
+        for key in ("path", "file", "git", "url"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate:
+                return f"@ {candidate}"
+    return "*"
