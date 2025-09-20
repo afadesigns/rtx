@@ -28,11 +28,15 @@ def _configure_logging(level: str) -> None:
 def _resolve_output_path(fmt: str, output: str | None) -> Path | None:
     """Normalize CLI format/output combinations and enforce requirements."""
     normalized = fmt.lower()
-    if normalized in {"json", "html"}:
+    if normalized == "json":
         if not output:
-            raise ReportRenderingError(
-                f"{normalized.upper()} output requires --output path"
-            )
+            raise ReportRenderingError("JSON output requires --output path")
+        if output == "-":
+            return None
+        return Path(output)
+    if normalized == "html":
+        if not output:
+            raise ReportRenderingError("HTML output requires --output path")
         return Path(output)
     return Path(output) if output else None
 
@@ -60,7 +64,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
         if fmt == "table":
             render_table(report, console=console)
         else:
-            render(report, fmt=fmt, output=output_path)
+            rendered = render(report, fmt=fmt, output=output_path)
+            if rendered is not None:
+                console.print(rendered)
     except ReportRenderingError as exc:
         console.print(f"[red]Failed to render report:[/] {exc}")
         return 2
@@ -161,7 +167,9 @@ def cmd_report(args: argparse.Namespace) -> int:
         if fmt == "table":
             render_table(report, console=console)
         else:
-            render(report, fmt=fmt, output=output_path)
+            rendered = render(report, fmt=fmt, output=output_path)
+            if rendered is not None:
+                console.print(rendered)
     except ReportRenderingError as exc:
         console.print(f"[red]Failed to render report:[/] {exc}")
         return 2
@@ -349,7 +357,9 @@ def _handle_signal_summary(
             console.print(f"Signals: {counts_display}", style="bold cyan")
             if severity_display:
                 console.print(f"Signal severities: {severity_display}", style="cyan")
-    if output:
+    if output == "-":
+        console.print(json.dumps(summary.to_dict(), indent=2))
+    elif output:
         path = Path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
         data = summary.to_dict()

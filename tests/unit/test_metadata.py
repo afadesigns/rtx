@@ -440,7 +440,7 @@ async def test_fetch_nuget_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                                         "published": (
                                             datetime.utcnow() - timedelta(days=45)
                                         ).isoformat(),
-                                        "authors": "Alice",
+                                        "authors": "alice",
                                     }
                                 },
                             ]
@@ -484,7 +484,7 @@ async def test_fetch_packagist_parses_metadata(monkeypatch, tmp_path: Path) -> N
                                 "time": (
                                     datetime.utcnow() - timedelta(days=90)
                                 ).isoformat(),
-                                "authors": [{"name": "Alice"}],
+                                "authors": [{"name": "alice"}, {"name": "Bob"}],
                             },
                         }
                     }

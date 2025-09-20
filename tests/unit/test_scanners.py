@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from rtx.registry import get_scanners
+from rtx.scanners.composer import ComposerScanner
 from rtx.scanners.npm import NpmScanner
+from rtx.scanners.nuget import NuGetScanner
 from rtx.scanners.pypi import PyPIScanner
 
 
@@ -134,3 +136,85 @@ def test_pypi_scanner_handles_pipfile_tables(tmp_path: Path) -> None:
     assert versions["requests"] == "2.31.0"
     assert versions["rich"] == "*"
     assert "local" not in versions or versions["local"].startswith("@ ")
+
+
+def test_composer_scanner_marks_direct_and_dev_dependencies(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "composer.json").write_text(
+        textwrap.dedent(
+            """
+            {
+              "require": {
+                "vendor/core": "^1.2"
+              },
+              "require-dev": {
+                "vendor/devtool": "^0.3"
+              }
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "composer.lock").write_text(
+        textwrap.dedent(
+            """
+            {
+              "packages": [
+                {"name": "vendor/core", "version": "1.2.1"}
+              ],
+              "packages-dev": [
+                {"name": "vendor/devtool", "version": "0.3.5"},
+                {"name": "third/party", "version": "2.0.0"}
+              ]
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = ComposerScanner()
+    dependencies = {dep.name: dep for dep in scanner.scan(project)}
+
+    core = dependencies["vendor/core"]
+    assert core.version == "1.2.1"
+    assert core.direct is True
+    assert core.metadata["scope"] == "production"
+    assert core.metadata["source"] == "composer.lock"
+
+    devtool = dependencies["vendor/devtool"]
+    assert devtool.direct is True
+    assert devtool.metadata["dev"] is True
+    assert devtool.metadata["scope"] == "development"
+
+    transitive = dependencies["third/party"]
+    assert transitive.direct is False
+    assert transitive.metadata["scope"] == "transitive"
+
+
+def test_nuget_scanner_parses_project_references(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "packages.lock.json").write_text("{}", encoding="utf-8")
+    (project / "broken.csproj").write_text("<Project>", encoding="utf-8")
+    (project / "app.csproj").write_text(
+        textwrap.dedent(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+                <PackageReference Include="Serilog" >
+                  <Version>2.12.0</Version>
+                </PackageReference>
+              </ItemGroup>
+            </Project>
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    scanner = NuGetScanner()
+    dependencies = {dep.name: dep for dep in scanner.scan(project)}
+
+    assert dependencies["Newtonsoft.Json"].version == "13.0.3"
+    assert dependencies["Serilog"].version == "2.12.0"

@@ -111,16 +111,17 @@ def render_html(report: Report, *, path: Path) -> None:
         raise ReportRenderingError("Failed to render HTML report") from exc
 
 
-def render(report: Report, *, fmt: str, output: Path | None = None) -> None:
-    if fmt == "table":
-        render_table(report)
-    elif fmt == "json":
-        if not output:
-            raise ReportRenderingError("JSON output requires --output path")
-        render_json(report, path=output)
-    elif fmt == "html":
-        if not output:
+def render(report: Report, *, fmt: str, output: Path | None = None) -> str | None:
+    normalized = fmt.lower()
+    if normalized == "json":
+        serialized = render_json(report, path=output)
+        return serialized if output is None else None
+    if normalized == "html":
+        if output is None:
             raise ReportRenderingError("HTML output requires --output path")
         render_html(report, path=output)
-    else:
-        raise ReportRenderingError(f"Unknown format: {fmt}")
+        return None
+    if normalized == "table":
+        render_table(report)
+        return None
+    raise ReportRenderingError(f"Unknown format: {fmt}")

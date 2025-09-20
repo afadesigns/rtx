@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
+import xml.etree.ElementTree as ET
+
 from rtx.models import Dependency
 from rtx.scanners import common
 from rtx.scanners.base import BaseScanner
@@ -26,9 +28,10 @@ class NuGetScanner(BaseScanner):
 
         for pattern in ("*.csproj", "*.fsproj"):
             for path in detect_files(root, [pattern]):
-                import xml.etree.ElementTree as ET
-
-                tree = ET.parse(path)
+                try:
+                    tree = ET.parse(path)
+                except ET.ParseError:
+                    continue
                 root_tag = tree.getroot()
                 namespace = (
                     ""

@@ -543,9 +543,13 @@ class MetadataClient:
                         for author in authors.split(",")
                         if author.strip()
                     )
-        maintainers = sorted({name for name in maintainers if name})
+        normalized_maintainers = _dedupe_names(maintainers)
         return ReleaseMetadata(
-            latest, releases_last_30d, total, maintainers, dependency.ecosystem
+            latest,
+            releases_last_30d,
+            total,
+            normalized_maintainers,
+            dependency.ecosystem,
         )
 
     async def _fetch_packagist(self, dependency: Dependency) -> ReleaseMetadata:
@@ -584,7 +588,11 @@ class MetadataClient:
                         name = author.get("name") or author.get("homepage")
                         if isinstance(name, str) and name:
                             maintainers.append(name)
-        maintainers = sorted({name for name in maintainers if name})
+        normalized_maintainers = _dedupe_names(maintainers)
         return ReleaseMetadata(
-            latest, releases_last_30d, total, maintainers, dependency.ecosystem
+            latest,
+            releases_last_30d,
+            total,
+            normalized_maintainers,
+            dependency.ecosystem,
         )

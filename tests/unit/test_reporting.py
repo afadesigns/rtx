@@ -181,10 +181,13 @@ def test_render_html_writes_file(tmp_path: Path) -> None:
     assert "Signal Severities" in contents
 
 
-def test_render_requires_output_for_json(tmp_path: Path) -> None:
+def test_render_json_returns_serialized_payload(tmp_path: Path) -> None:
     report = _sample_report()
-    with pytest.raises(ReportRenderingError):
-        render(report, fmt="json")
+    payload = render(report, fmt="json")
+    parsed = json.loads(payload)
+    assert parsed["summary"]["total"] == 1
+    assert parsed["findings"][0]["name"] == "demo"
+    assert parsed["findings"][0]["dependency"] == "pypi:demo@1.2.3"
 
 
 def test_render_unknown_format(tmp_path: Path) -> None:

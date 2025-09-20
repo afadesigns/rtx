@@ -37,6 +37,10 @@ def test_resolve_output_path_requires_output() -> None:
         _resolve_output_path("html", None)
 
 
+def test_resolve_output_path_allows_stdout_for_json() -> None:
+    assert _resolve_output_path("json", "-") is None
+
+
 def _sample_report(exit_code: int = 0) -> Report:
     dependency = Dependency(
         ecosystem="pypi",
@@ -165,6 +169,23 @@ def test_scan_requires_output_for_json(
     assert "JSON output requires --output path" in captured
 
 
+def test_scan_writes_json_to_stdout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
+) -> None:
+    report = _sample_report(exit_code=0)
+    monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
+    monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
+
+    exit_code = main(
+        ["scan", "--path", str(tmp_path), "--format", "json", "--output", "-"]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr().out
+    assert "pypi" in captured
+    assert '"summary"' in captured
+
+
 def test_scan_signal_summary_flags(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -194,6 +215,33 @@ def test_scan_signal_summary_flags(
     summary_path = tmp_path / "summary.json"
     data = json.loads(summary_path.read_text(encoding="utf-8"))
     assert data["counts"]["maintainer"] == 1
+
+
+def test_scan_signal_summary_stdout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
+) -> None:
+    report = _sample_report(exit_code=2)
+    monkeypatch.setattr("rtx.api.scan_project", lambda *_: report, raising=False)
+    monkeypatch.setattr(
+        "rtx.reporting.render_table", lambda *_, **__: None, raising=False
+    )
+    monkeypatch.setattr("rtx.sbom.write_sbom", lambda *_, **__: None, raising=False)
+
+    exit_code = main(
+        [
+            "scan",
+            "--path",
+            str(tmp_path),
+            "--show-signal-summary",
+            "--signal-summary-output",
+            "-",
+        ]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr().out
+    assert "Signals: maintainer=1" in captured
+    assert '"counts"' in captured
 
 
 def test_report_renders_from_json(
