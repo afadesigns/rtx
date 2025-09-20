@@ -15,7 +15,7 @@ def main() -> None:
     args = parser.parse_args()
 
     report = scan_project(args.path, managers=args.managers)
-    write_sbom(report, path=str(args.output))
+    write_sbom(report, path=args.output)
 
 
 if __name__ == "__main__":

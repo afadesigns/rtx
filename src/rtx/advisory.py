@@ -181,8 +181,18 @@ class AdvisoryClient:
 
         aggregated: Dict[str, List[Advisory]] = dict(cached)
         if unique_uncached:
-            for chunk_deps in chunked(list(unique_uncached.values()), config.OSV_BATCH_SIZE):
-                chunk_result = await self._retry(lambda deps=chunk_deps: task(list(deps)))
+            uncached = list(unique_uncached.values())
+            chunks = [list(chunk) for chunk in chunked(uncached, config.OSV_BATCH_SIZE)]
+            max_concurrency = max(1, getattr(config, "OSV_MAX_CONCURRENCY", 1))
+            semaphore = asyncio.Semaphore(max_concurrency)
+
+            async def run_chunk(chunk_deps: List[Dependency]) -> Dict[str, List[Advisory]]:
+                async with semaphore:
+                    deps_copy = list(chunk_deps)
+                    return await self._retry(lambda deps=deps_copy: task(deps))
+
+            chunk_results = await asyncio.gather(*(run_chunk(chunk) for chunk in chunks))
+            for chunk_result in chunk_results:
                 for key, advisories in chunk_result.items():
                     aggregated[key] = advisories
                     if self._osv_cache_size > 0:

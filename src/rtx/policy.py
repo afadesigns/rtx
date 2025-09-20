@@ -56,6 +56,12 @@ class TrustPolicyEngine:
         }
         self._metadata_client = MetadataClient()
 
+    async def __aenter__(self) -> "TrustPolicyEngine":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+
     async def analyze(self, dependency: Dependency, advisories: List[Advisory]) -> PackageFinding:
         metadata = await self._metadata_client.fetch(dependency)
         signals = self._derive_signals(dependency, metadata)

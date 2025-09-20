@@ -74,13 +74,28 @@ def read_toml(path: Path) -> Any:
 def detect_files(root: Path, patterns: Sequence[str]) -> List[Path]:
     matches: List[Path] = []
     for pattern in patterns:
-        if "*" in pattern or "?" in pattern:
+        if any(char in pattern for char in "*?["):
             matches.extend(root.glob(pattern))
         else:
             candidate = root / pattern
             if candidate.exists():
                 matches.append(candidate)
     return sorted(set(matches))
+
+
+def has_matching_file(root: Path, patterns: Sequence[str]) -> bool:
+    for pattern in patterns:
+        if any(char in pattern for char in "*?["):
+            iterator = root.glob(pattern)
+            try:
+                next(iterator)
+                return True
+            except StopIteration:
+                continue
+        else:
+            if (root / pattern).exists():
+                return True
+    return False
 
 
 def slugify(value: str) -> str:

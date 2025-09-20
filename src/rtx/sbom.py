@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Dict, List
+from pathlib import Path
+from typing import Any, Dict, List
 
-from rtx.models import PackageFinding, Report, Severity
+from rtx import __version__
+from rtx.models import PackageFinding, Report
 
 PURL_ECOSYSTEMS = {
     "pypi": "pypi",
@@ -40,7 +42,7 @@ def generate_sbom(report: Report) -> Dict[str, object]:
                 "version": finding.dependency.version,
                 "purl": _purl(finding),
                 "scope": "required" if finding.dependency.direct else "optional",
-                "licenses": [{"license": {"id": finding.dependency.metadata.get("license", "UNKNOWN")}}],
+                "licenses": _normalize_licenses(finding.dependency.metadata),
             }
         )
         for advisory in finding.advisories:
@@ -79,7 +81,7 @@ def generate_sbom(report: Report) -> Dict[str, object]:
                 {
                     "vendor": "afadesigns",
                     "name": "Real Tracker X",
-                    "version": "0.1.0",
+                    "version": __version__,
                 }
             ],
         },
@@ -88,7 +90,37 @@ def generate_sbom(report: Report) -> Dict[str, object]:
     }
 
 
-def write_sbom(report: Report, *, path: str) -> None:
+def write_sbom(report: Report, *, path: str | Path) -> None:
     payload = generate_sbom(report)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2)
+    sbom_path = Path(path)
+    sbom_path.parent.mkdir(parents=True, exist_ok=True)
+    sbom_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _normalize_licenses(metadata: dict[str, Any]) -> List[Dict[str, object]]:
+    raw = metadata.get("license")
+    entries: List[Dict[str, object]] = []
+    if isinstance(raw, str):
+        cleaned = raw.strip()
+        if cleaned:
+            entries.append({"license": {"id": cleaned}})
+    elif isinstance(raw, dict):
+        identifier = raw.get("id") or raw.get("name")
+        if isinstance(identifier, str) and identifier.strip():
+            entries.append({"license": {"id": identifier.strip()}})
+        else:
+            entries.append({"license": raw})
+    elif isinstance(raw, (list, tuple, set)):
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                entries.append({"license": {"id": item.strip()}})
+            elif isinstance(item, dict):
+                identifier = item.get("id") or item.get("name")
+                if isinstance(identifier, str) and identifier.strip():
+                    entries.append({"license": {"id": identifier.strip()}})
+                else:
+                    entries.append({"license": item})
+
+    if not entries:
+        entries.append({"license": {"id": "UNKNOWN"}})
+    return entries

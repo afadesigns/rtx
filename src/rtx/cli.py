@@ -109,11 +109,8 @@ def cmd_pre_upgrade(args: argparse.Namespace) -> int:
     async def evaluate() -> PackageFinding:
         async with AdvisoryClient() as advisory_client:
             advisory_map = await advisory_client.fetch_advisories([dependency])
-        engine = TrustPolicyEngine()
-        try:
+        async with TrustPolicyEngine() as engine:
             return await engine.analyze(dependency, advisory_map.get(dependency.coordinate, []))
-        finally:
-            await engine.close()
 
     finding = asyncio.run(evaluate())
     console.print(f"Baseline: {baseline.dependency.version} → {baseline.verdict.value}")

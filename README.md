@@ -39,7 +39,7 @@ rtx report --format json --output reports/rtx.json
 - Network-bound clients honor `RTX_HTTP_TIMEOUT` (seconds, default `5.0`) and `RTX_HTTP_RETRIES` (non-negative integer, default `2`) to tune resilience versus responsiveness.
 - Set `RTX_GITHUB_MAX_CONCURRENCY` to bound concurrent GitHub Security API requests (default `6`).
 - Toggle `RTX_DISABLE_GITHUB_ADVISORIES=1` when running in air-gapped or rate-limited environments to skip GitHub lookups entirely.
-- Control OSV batching with `RTX_OSV_BATCH_SIZE` (default `18`) and cap the in-memory OSV cache with `RTX_OSV_CACHE_SIZE` (default `512`).
+- Control OSV batching with `RTX_OSV_BATCH_SIZE` (default `18`), cap the in-memory OSV cache with `RTX_OSV_CACHE_SIZE` (default `512`), and bound concurrent OSV API requests via `RTX_OSV_MAX_CONCURRENCY` (default `4`).
 - CLI format switches are validated directly by argparse. Passing an unsupported format (for example `--format pdf`) exits with an actionable error before any network calls occur.
 - Providing an unknown package manager via `--manager` now fails fast with the offending name, making misconfigurations obvious during automation.
 

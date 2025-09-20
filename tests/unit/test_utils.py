@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from rtx.scanners import common
-from rtx.utils import AsyncRetry, Graph, chunked, env_flag, slugify
+from rtx.utils import AsyncRetry, Graph, chunked, env_flag, has_matching_file, slugify
 
 
 def test_normalize_version_handles_semver() -> None:
@@ -115,3 +115,17 @@ def test_graph_to_dict_returns_copies() -> None:
     fresh = graph.to_dict()
     assert fresh["nodes"]["pkg"]["direct"] is True
     assert fresh["edges"]["pkg"] == ["child"]
+
+
+def test_has_matching_file_handles_literal_path(tmp_path: Path) -> None:
+    target = tmp_path / "package.json"
+    target.write_text("{}", encoding="utf-8")
+    assert has_matching_file(tmp_path, ["package.json"]) is True
+    assert has_matching_file(tmp_path, ["missing.json"]) is False
+
+
+def test_has_matching_file_handles_glob_patterns(tmp_path: Path) -> None:
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "requirements.txt").write_text("requests==2.31.0", encoding="utf-8")
+    assert has_matching_file(tmp_path, ["nested/*.txt"]) is True
+    assert has_matching_file(tmp_path, ["*.lock"]) is False

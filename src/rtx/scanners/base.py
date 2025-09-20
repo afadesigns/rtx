@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List
 
 from rtx.models import Dependency
-from rtx.utils import detect_files
+from rtx.utils import has_matching_file
 
 
 class BaseScanner(ABC):
@@ -14,7 +14,7 @@ class BaseScanner(ABC):
     ecosystem: str
 
     def matches(self, root: Path) -> bool:
-        return bool(detect_files(root, self.manifests))
+        return has_matching_file(root, self.manifests)
 
     @abstractmethod
     def scan(self, root: Path) -> List[Dependency]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from typing import Awaitable, Callable, Dict, Optional
 
 import httpx
 
@@ -90,6 +90,16 @@ class MetadataClient:
         self._cache: Dict[str, ReleaseMetadata] = {}
         self._inflight: Dict[str, asyncio.Task[ReleaseMetadata]] = {}
         self._lock = asyncio.Lock()
+        self._fetchers: Dict[str, Callable[[Dependency], Awaitable[ReleaseMetadata]]] = {
+            "pypi": self._fetch_pypi,
+            "npm": self._fetch_npm,
+            "crates": self._fetch_crates,
+            "go": self._fetch_gomod,
+            "rubygems": self._fetch_rubygems,
+            "maven": self._fetch_maven,
+            "nuget": self._fetch_nuget,
+            "packagist": self._fetch_packagist,
+        }
 
     async def __aenter__(self) -> "MetadataClient":
         return self
@@ -130,22 +140,9 @@ class MetadataClient:
         return result
 
     async def _fetch_uncached(self, dependency: Dependency) -> ReleaseMetadata:
-        if dependency.ecosystem == "pypi":
-            return await self._retry(lambda: self._fetch_pypi(dependency))
-        if dependency.ecosystem == "npm":
-            return await self._retry(lambda: self._fetch_npm(dependency))
-        if dependency.ecosystem == "crates":
-            return await self._retry(lambda: self._fetch_crates(dependency))
-        if dependency.ecosystem == "go":
-            return await self._retry(lambda: self._fetch_gomod(dependency))
-        if dependency.ecosystem == "rubygems":
-            return await self._retry(lambda: self._fetch_rubygems(dependency))
-        if dependency.ecosystem == "maven":
-            return await self._retry(lambda: self._fetch_maven(dependency))
-        if dependency.ecosystem == "nuget":
-            return await self._retry(lambda: self._fetch_nuget(dependency))
-        if dependency.ecosystem == "packagist":
-            return await self._retry(lambda: self._fetch_packagist(dependency))
+        fetcher = self._fetchers.get(dependency.ecosystem)
+        if fetcher is not None:
+            return await self._retry(lambda fetch=fetcher: fetch(dependency))
         return ReleaseMetadata(latest_release=None, releases_last_30d=0, total_releases=0, maintainers=[], ecosystem=dependency.ecosystem)
 
     async def _fetch_pypi(self, dependency: Dependency) -> ReleaseMetadata:

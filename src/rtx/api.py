@@ -57,20 +57,27 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
     async with AdvisoryClient() as advisory_client:
         advisory_map = await advisory_client.fetch_advisories(dependencies)
 
-    engine = TrustPolicyEngine()
     limit = max(1, getattr(config, "POLICY_ANALYSIS_CONCURRENCY", 1))
     semaphore = asyncio.Semaphore(limit)
+    findings_buffer: list[PackageFinding | None] = [None] * len(dependencies)
 
-    async def analyze_with_limit(dep: Dependency) -> PackageFinding:
-        async with semaphore:
-            return await engine.analyze(dep, advisory_map.get(dep.coordinate, []))
+    async with TrustPolicyEngine() as engine:
+        async def analyze_with_limit(index: int, dep: Dependency) -> None:
+            async with semaphore:
+                findings_buffer[index] = await engine.analyze(
+                    dep, advisory_map.get(dep.coordinate, [])
+                )
 
-    try:
-        findings: List[PackageFinding] = list(
-            await asyncio.gather(*(analyze_with_limit(dep) for dep in dependencies))
-        )
-    finally:
-        await engine.close()
+        if hasattr(asyncio, "TaskGroup"):
+            async with asyncio.TaskGroup() as tg:
+                for index, dep in enumerate(dependencies):
+                    tg.create_task(analyze_with_limit(index, dep))
+        else:
+            await asyncio.gather(
+                *(analyze_with_limit(index, dep) for index, dep in enumerate(dependencies))
+            )
+
+    findings: List[PackageFinding] = [finding for finding in findings_buffer if finding is not None]
 
     graph = Graph()
     for finding in findings:
