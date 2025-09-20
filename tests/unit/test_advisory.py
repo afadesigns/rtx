@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from rtx import config
 from rtx.advisory import AdvisoryClient
 from rtx.models import Dependency, Severity
 
@@ -49,6 +50,7 @@ async def test_osv_queries_use_expected_ecosystem_names(monkeypatch, tmp_path: P
 
 @pytest.mark.asyncio
 async def test_osv_query_deduplicates_dependencies(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(config, "OSV_CACHE_SIZE", 512)
     client = AdvisoryClient()
     calls = 0
 
@@ -146,6 +148,7 @@ async def test_github_query_deduplicates_packages(monkeypatch, tmp_path: Path) -
 
 @pytest.mark.asyncio
 async def test_osv_query_uses_cache(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(config, "OSV_CACHE_SIZE", 512)
     client = AdvisoryClient()
     calls = 0
 
@@ -182,6 +185,7 @@ async def test_osv_query_uses_cache(monkeypatch, tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_fetch_advisories_respects_disable_flag(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("RTX_DISABLE_GITHUB_ADVISORIES", "1")
+    monkeypatch.setattr(config, "OSV_CACHE_SIZE", 0)
     client = AdvisoryClient()
     client._gh_token = "token"
     invoked = False
@@ -207,3 +211,98 @@ async def test_fetch_advisories_respects_disable_flag(monkeypatch, tmp_path: Pat
 
     assert invoked is False
     assert results["pypi:requests@2.31.0"] == []
+
+
+@pytest.mark.asyncio
+async def test_osv_cache_lru_eviction(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(config, "OSV_CACHE_SIZE", 1)
+    client = AdvisoryClient()
+    calls = 0
+
+    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+        nonlocal calls
+        calls += 1
+        return _FakeResponse(
+            {
+                "results": [
+                    {
+                        "vulns": [
+                            {
+                                "id": "OSV-1",
+                                "summary": "",
+                                "severity": [{"score": "4.1"}],
+                            }
+                        ]
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    dep_a = Dependency("pypi", "pkg-a", "1.0.0", True, tmp_path)
+    dep_b = Dependency("pypi", "pkg-b", "1.0.0", True, tmp_path)
+
+    try:
+        await client._query_osv([dep_a])
+        await client._query_osv([dep_b])
+        await client._query_osv([dep_a])
+    finally:
+        await client.close()
+
+    assert calls == 3
+
+
+@pytest.mark.asyncio
+async def test_osv_batch_size_respects_config(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(config, "OSV_BATCH_SIZE", 1)
+    monkeypatch.setattr(config, "OSV_CACHE_SIZE", 0)
+    client = AdvisoryClient()
+    calls = 0
+    batch_lengths: list[int] = []
+
+    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+        nonlocal calls
+        calls += 1
+        assert json is not None
+        batch_lengths.append(len(json.get("queries", [])))
+        return _FakeResponse({"results": [{}]})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    deps = [
+        Dependency("pypi", f"pkg-{idx}", "1.0.0", True, tmp_path)
+        for idx in range(3)
+    ]
+
+    try:
+        await client._query_osv(deps)
+    finally:
+        await client.close()
+
+    assert calls == 3
+    assert batch_lengths == [1, 1, 1]
+
+
+@pytest.mark.asyncio
+async def test_clear_cache_empties_entries(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(config, "OSV_CACHE_SIZE", 8)
+    client = AdvisoryClient()
+    calls = 0
+
+    async def fake_post(url: str, *, json: dict | None = None, **_: object) -> _FakeResponse:
+        nonlocal calls
+        calls += 1
+        return _FakeResponse({"results": [{}]})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+    dep = Dependency("pypi", "cached", "1.0.0", True, tmp_path)
+
+    try:
+        await client._query_osv([dep])
+        client.clear_cache()
+        await client._query_osv([dep])
+    finally:
+        await client.close()
+
+    assert calls == 2

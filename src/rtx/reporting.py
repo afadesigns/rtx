@@ -54,6 +54,10 @@ def render_table(report: Report, *, console: Console | None = None) -> None:
     if severity_totals:
         formatted = ", ".join(f"{severity}={count}" for severity, count in severity_totals.items())
         console.print(f"Signal severities: {formatted}", style="cyan")
+    manager_usage = summary.get("manager_usage", {})
+    if manager_usage:
+        formatted = ", ".join(f"{manager}={count}" for manager, count in manager_usage.items())
+        console.print(f"Managers: {formatted}", style="green")
 
 
 def render_json(report: Report, *, path: Path | None = None) -> str:

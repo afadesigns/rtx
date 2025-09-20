@@ -86,7 +86,7 @@ class ReleaseMetadata:
 class MetadataClient:
     def __init__(self, *, timeout: float = config.HTTP_TIMEOUT, retries: int = config.HTTP_RETRIES) -> None:
         self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": config.USER_AGENT})
-        self._retry = AsyncRetry(retries=retries, delay=0.5)
+        self._retry = AsyncRetry(retries=retries, delay=0.5, exceptions=(httpx.HTTPError,))
         self._cache: Dict[str, ReleaseMetadata] = {}
         self._inflight: Dict[str, asyncio.Task[ReleaseMetadata]] = {}
         self._lock = asyncio.Lock()

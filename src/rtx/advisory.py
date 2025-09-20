@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from collections import OrderedDict
 from itertools import zip_longest
 from typing import Dict, Iterable, List, Tuple
 
@@ -95,10 +96,11 @@ def _severity_from_osv(entry: dict) -> Severity:
 class AdvisoryClient:
     def __init__(self, *, timeout: float = config.HTTP_TIMEOUT, retries: int = config.HTTP_RETRIES) -> None:
         self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": config.USER_AGENT})
-        self._retry = AsyncRetry(retries=retries, delay=0.5)
+        self._retry = AsyncRetry(retries=retries, delay=0.5, exceptions=(httpx.HTTPError,))
         self._gh_token = os.getenv("RTX_GITHUB_TOKEN") or os.getenv(config.GITHUB_DEFAULT_TOKEN_ENV)
         self._gh_disabled = env_flag("RTX_DISABLE_GITHUB_ADVISORIES", False)
-        self._osv_cache: Dict[str, List[Advisory]] = {}
+        self._osv_cache: OrderedDict[str, List[Advisory]] = OrderedDict()
+        self._osv_cache_size = config.OSV_CACHE_SIZE
 
     async def __aenter__(self) -> "AdvisoryClient":
         return self
@@ -132,12 +134,12 @@ class AdvisoryClient:
         unique_uncached: Dict[str, Dependency] = {}
         for dep in dependencies:
             coordinate = dep.coordinate
-            if coordinate in cached:
-                continue
-            cached_value = self._osv_cache.get(coordinate)
-            if cached_value is not None:
-                cached[coordinate] = list(cached_value)
-                continue
+            if self._osv_cache_size > 0:
+                cached_value = self._osv_cache.get(coordinate)
+                if cached_value is not None:
+                    cached[coordinate] = list(cached_value)
+                    self._osv_cache.move_to_end(coordinate)
+                    continue
             unique_uncached.setdefault(coordinate, dep)
 
         async def task(chunk_deps: List[Dependency]) -> Dict[str, List[Advisory]]:
@@ -179,13 +181,22 @@ class AdvisoryClient:
 
         aggregated: Dict[str, List[Advisory]] = dict(cached)
         if unique_uncached:
-            for chunk_deps in chunked(list(unique_uncached.values()), 18):  # OSV limits 1000 queries; keep small for reliability
+            for chunk_deps in chunked(list(unique_uncached.values()), config.OSV_BATCH_SIZE):
                 chunk_result = await self._retry(lambda deps=chunk_deps: task(list(deps)))
                 for key, advisories in chunk_result.items():
                     aggregated[key] = advisories
-                    self._osv_cache[key] = list(advisories)
+                    if self._osv_cache_size > 0:
+                        if key in self._osv_cache:
+                            self._osv_cache.move_to_end(key)
+                        else:
+                            while len(self._osv_cache) >= self._osv_cache_size:
+                                self._osv_cache.popitem(last=False)
+                        self._osv_cache[key] = list(advisories)
 
         return {dep.coordinate: list(aggregated.get(dep.coordinate, [])) for dep in dependencies}
+
+    def clear_cache(self) -> None:
+        self._osv_cache.clear()
 
     async def _query_github(self, dependencies: List[Dependency]) -> Dict[str, List[Advisory]]:
         query = """

@@ -52,6 +52,7 @@ def test_render_table_includes_signal_details() -> None:
     assert "[maintainers=[]]" in output
     assert "Signals: maintainer=1" in output
     assert "Signal severities: medium=1" in output
+    assert "Managers: pypi=1" in output
 
 
 def _sample_report() -> Report:
