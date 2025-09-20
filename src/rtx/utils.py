@@ -171,7 +171,7 @@ def env_flag(name: str, default: bool = False) -> bool:
 class Graph:
     def __init__(self) -> None:
         self._nodes: dict[str, dict[str, Any]] = {}
-        self._edges: dict[str, list[str]] = defaultdict(list)
+        self._edges: dict[str, set[str]] = defaultdict(set)
         self._edge_count = 0
 
     def add_node(self, key: str, metadata: dict[str, Any]) -> None:
@@ -179,18 +179,23 @@ class Graph:
         node.update(metadata)
 
     def add_edge(self, src: str, dest: str) -> None:
-        if dest not in self._edges[src]:
-            self._edges[src].append(dest)
+        edges = self._edges[src]
+        if dest not in edges:
+            edges.add(dest)
             self._edge_count += 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "nodes": {key: dict(value) for key, value in self._nodes.items()},
-            "edges": {key: list(values) for key, values in self._edges.items()},
+            "edges": {
+                key: sorted(values)
+                for key, values in self._edges.items()
+                if values
+            },
         }
 
     def dependencies_of(self, key: str) -> list[str]:
-        return list(self._edges.get(key, []))
+        return sorted(self._edges.get(key, set()))
 
     def __len__(self) -> int:
         return len(self._nodes)

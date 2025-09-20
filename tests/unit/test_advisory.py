@@ -55,6 +55,36 @@ async def test_osv_queries_use_expected_ecosystem_names(
 
 
 @pytest.mark.asyncio
+async def test_osv_query_skips_unsupported_ecosystems(
+    monkeypatch, tmp_path: Path
+) -> None:
+    client = AdvisoryClient()
+    called = False
+
+    async def fake_post(*_: object, **__: object) -> _FakeResponse:
+        nonlocal called
+        called = True
+        return _FakeResponse({"results": []})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+    dependencies = [
+        Dependency("homebrew", "wget", "1.0.0", True, tmp_path),
+        Dependency("docker", "python", "3.11", True, tmp_path),
+    ]
+
+    try:
+        results = await client._query_osv(dependencies)
+    finally:
+        await client.close()
+
+    assert called is False
+    assert results == {
+        "homebrew:wget@1.0.0": [],
+        "docker:python@3.11": [],
+    }
+
+
+@pytest.mark.asyncio
 async def test_osv_query_skips_on_client_error(monkeypatch, tmp_path: Path) -> None:
     client = AdvisoryClient()
 

@@ -380,13 +380,22 @@ class MetadataClient:
 
         async def fetch_version(version: str) -> datetime | None:
             async with semaphore:
-                info_resp = await self._client.get(
-                    f"https://proxy.golang.org/{module}/@v/{version}.info"
-                )
+                try:
+                    info_resp = await self._client.get(
+                        f"https://proxy.golang.org/{module}/@v/{version}.info"
+                    )
+                except httpx.HTTPError:
+                    return None
             if info_resp.status_code != 200:
                 return None
-            info = info_resp.json()
-            return _parse_date(info.get("Time"))
+            try:
+                info = info_resp.json()
+            except ValueError:
+                return None
+            timestamp = info.get("Time") if isinstance(info, dict) else None
+            if not isinstance(timestamp, str):
+                return None
+            return _parse_date(timestamp)
 
         release_times = await asyncio.gather(
             *(fetch_version(version) for version in versions_to_check)

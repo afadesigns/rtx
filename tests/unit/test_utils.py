@@ -79,6 +79,17 @@ def test_unique_preserving_order_respects_key() -> None:
     assert unique_preserving_order(values, key=str.lower) == ["Alpha", "beta", "gamma"]
 
 
+def test_parse_requirement_lines_prefers_specific_specifiers() -> None:
+    lines = [
+        "requests",
+        "requests>=2.0",
+        "requests==2.31.0",
+        "requests @ git+https://example.com/pkg.git",
+    ]
+    result = common._parse_requirement_lines(lines)
+    assert result["requests"].startswith("@")
+
+
 @pytest.mark.asyncio
 async def test_async_retry_respects_cancelled_error() -> None:
     retry = AsyncRetry(retries=2, delay=0.01)

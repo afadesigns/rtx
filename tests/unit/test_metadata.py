@@ -198,7 +198,38 @@ async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     assert metadata.latest_release.date() == now.date()
     assert metadata.releases_last_30d == 1
     assert metadata.total_releases == 2
-    assert metadata.maintainers == ["alice"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_gomod_tolerates_per_version_failures(
+    monkeypatch, tmp_path: Path
+) -> None:
+    dependency = Dependency("go", "example.com/mod", "v1.0.0", True, tmp_path)
+    now = datetime.utcnow().replace(microsecond=0)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/@v/list"):
+            return text_response("v1.0.0\nv0.9.0\n")
+        if request.url.path.endswith("/@v/v1.0.0.info"):
+            return json_response({"Time": f"{now.isoformat()}Z"})
+        if request.url.path.endswith("/@v/v0.9.0.info"):
+            return httpx.Response(404)
+        return httpx.Response(500)
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_gomod(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is not None
+    assert metadata.latest_release >= now
+    assert metadata.releases_last_30d == 1
+    assert metadata.total_releases == 2
+    assert metadata.maintainers == []
 
 
 @pytest.mark.asyncio

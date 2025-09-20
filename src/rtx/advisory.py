@@ -31,6 +31,17 @@ OSV_ECOSYSTEM_MAP: dict[str, str] = {
     "docker": "Docker",
 }
 
+OSV_SUPPORTED_ECOSYSTEMS = {
+    "Go",
+    "npm",
+    "Maven",
+    "PyPI",
+    "RubyGems",
+    "NuGet",
+    "Packagist",
+    "crates.io",
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -214,8 +225,18 @@ class AdvisoryClient:
 
         cached: dict[str, list[Advisory]] = {}
         unique_uncached: dict[str, Dependency] = {}
+        supported_dependencies: list[Dependency] = []
+        ecosystem_overrides: dict[str, str] = {}
+        unsupported_coordinates: set[str] = set()
+
         for dep in dependencies:
             coordinate = dep.coordinate
+            osv_ecosystem = OSV_ECOSYSTEM_MAP.get(dep.ecosystem, dep.ecosystem)
+            if osv_ecosystem not in OSV_SUPPORTED_ECOSYSTEMS:
+                unsupported_coordinates.add(coordinate)
+                continue
+            ecosystem_overrides[coordinate] = osv_ecosystem
+            supported_dependencies.append(dep)
             if self._osv_cache_size > 0:
                 cached_value = self._osv_cache.get(coordinate)
                 if cached_value is not None:
@@ -229,9 +250,7 @@ class AdvisoryClient:
                 {
                     "package": {
                         "name": dep.name,
-                        "ecosystem": OSV_ECOSYSTEM_MAP.get(
-                            dep.ecosystem, dep.ecosystem
-                        ),
+                        "ecosystem": ecosystem_overrides[dep.coordinate],
                     },
                     "version": dep.version,
                 }
@@ -328,6 +347,9 @@ class AdvisoryClient:
                             while len(self._osv_cache) >= self._osv_cache_size:
                                 self._osv_cache.popitem(last=False)
                         self._osv_cache[key] = list(advisories)
+
+        for coordinate in unsupported_coordinates:
+            aggregated.setdefault(coordinate, [])
 
         return {
             dep.coordinate: list(aggregated.get(dep.coordinate, []))

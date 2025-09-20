@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
-from rtx.models import Dependency, PackageFinding, Severity, SignalSummary, TrustSignal
+import pytest
+
+from rtx.models import (
+    Dependency,
+    PackageFinding,
+    Report,
+    Severity,
+    SignalSummary,
+    TrustSignal,
+)
 
 
 def _finding_with_signals(category: str, severity: Severity) -> PackageFinding:
@@ -40,3 +50,22 @@ def test_signal_summary_empty() -> None:
     summary = SignalSummary.from_findings([])
     assert not summary.has_data()
     assert summary.counts == {}
+
+
+def test_report_uses_slots_and_defensive_stats(tmp_path: Path) -> None:
+    finding = _finding_with_signals("maintainer", Severity.MEDIUM)
+    report = Report(
+        path=tmp_path,
+        managers=["pypi"],
+        findings=[finding],
+        generated_at=datetime.utcnow(),
+        stats={"dependency_count": 1},
+    )
+
+    with pytest.raises(AttributeError):
+        report.extra = "value"  # type: ignore[attr-defined]
+
+    exported = report.to_dict()
+    exported["stats"]["dependency_count"] = 5
+
+    assert report.stats["dependency_count"] == 1

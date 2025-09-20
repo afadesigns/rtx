@@ -67,9 +67,30 @@ def _parse_requirement_lines(lines: Iterable[str]) -> dict[str, str]:
         if parsed is None:
             continue
         name, version = parsed
-        if name not in resolved:
+        existing = resolved.get(name)
+        if existing is None or _is_more_specific(version, existing):
             resolved[name] = version
     return resolved
+
+
+_SPECIFICITY_TOKENS = frozenset("<>=!~")
+
+
+def _is_more_specific(candidate: str, baseline: str) -> bool:
+    return _specificity_rank(candidate) > _specificity_rank(baseline)
+
+
+def _specificity_rank(specifier: str) -> int:
+    normalized = specifier.strip()
+    if not normalized or normalized == "*":
+        return 0
+    if normalized.startswith("@"):
+        return 5
+    if any(token in normalized for token in _SPECIFICITY_TOKENS):
+        if normalized.startswith("=="):
+            return 4
+        return 2
+    return 4 if normalized else 0
 
 
 def _parse_conda_dependency(entry: str) -> tuple[str, str] | None:

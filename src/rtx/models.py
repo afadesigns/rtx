@@ -5,7 +5,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -149,13 +148,16 @@ class PackageFinding:
         return max(severities, key=lambda level: SEVERITY_RANK[level.value])
 
 
-@dataclass
+@dataclass(slots=True)
 class Report:
     path: Path
     managers: list[str]
     findings: list[PackageFinding]
     generated_at: datetime
     stats: dict[str, Any] = field(default_factory=dict)
+    _signal_summary: SignalSummary | None = field(
+        init=False, default=None, repr=False, compare=False
+    )
 
     def highest_severity(self) -> Severity:
         if not self.findings:
@@ -235,13 +237,17 @@ class Report:
                 }
                 for finding in self.findings
             ],
-            "stats": self.stats,
+            "stats": dict(self.stats),
             "signal_summary": self.signal_summary.to_dict(),
         }
 
     def __iter__(self) -> Iterable[PackageFinding]:
         return iter(self.findings)
 
-    @cached_property
+    @property
     def signal_summary(self) -> SignalSummary:
-        return SignalSummary.from_findings(self.findings)
+        cached = self._signal_summary
+        if cached is None:
+            cached = SignalSummary.from_findings(self.findings)
+            self._signal_summary = cached
+        return cached
