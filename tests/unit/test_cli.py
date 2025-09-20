@@ -9,6 +9,7 @@ import pytest
 
 from rtx.cli import _report_from_payload, main
 from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity, TrustSignal
+from rtx.system import ToolStatus
 
 
 def _sample_report(exit_code: int = 0) -> Report:
@@ -244,3 +245,48 @@ def test_report_from_payload_roundtrip() -> None:
     payload["summary"]["generated_at"] = report.generated_at.isoformat()
     restored = _report_from_payload(payload)
     assert restored.exit_code() == 2
+
+
+def test_diagnostics_outputs_plain_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    statuses = [
+        ToolStatus(name="pip", available=True, path="/usr/bin/pip", version="pip 25"),
+        ToolStatus(name="npm", available=False),
+        ToolStatus(name="uv", available=True, path="/usr/bin/uv", error="timeout"),
+    ]
+
+    monkeypatch.setattr(
+        "rtx.cli.collect_manager_diagnostics",
+        lambda: statuses,
+        raising=False,
+    )
+
+    lines: list[str] = []
+
+    class DummyConsole:
+        def print(self, message: str) -> None:
+            lines.append(message)
+
+    monkeypatch.setattr("rtx.cli._get_console", lambda: DummyConsole(), raising=False)
+
+    exit_code = main(["diagnostics"])
+
+    assert exit_code == 1
+    assert any("pip" in line and "available" in line for line in lines)
+    assert any("npm" in line and "missing" in line for line in lines)
+    assert any("uv" in line and "error=timeout" in line for line in lines)
+
+
+def test_diagnostics_json_output(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
+    statuses = [ToolStatus(name="pip", available=True, path="/usr/bin/pip", version="pip 25")]
+
+    monkeypatch.setattr(
+        "rtx.cli.collect_manager_diagnostics",
+        lambda: statuses,
+        raising=False,
+    )
+
+    exit_code = main(["diagnostics", "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["pip"]["available"] is True

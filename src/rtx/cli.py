@@ -13,6 +13,7 @@ from rich.console import Console
 
 from rtx.exceptions import ManifestNotFound, ReportRenderingError
 from rtx.models import Report, Severity
+from rtx.system import collect_manager_diagnostics
 
 
 def _configure_logging(level: str) -> None:
@@ -164,6 +165,29 @@ def cmd_list_managers(_: argparse.Namespace) -> int:
     for name, cls in SCANNER_CLASSES.items():
         console.print(f"[bold]{name}[/bold]: {', '.join(cls.manifests)}")
     return 0
+
+
+def cmd_diagnostics(args: argparse.Namespace) -> int:
+    _configure_logging(args.log_level)
+    console = _get_console()
+    statuses = collect_manager_diagnostics()
+    if args.json:
+        payload = {status.name: status.to_dict() for status in statuses}
+        console.print(json.dumps(payload, indent=2))
+    else:
+        console.print("Toolchain diagnostics:")
+        for status in statuses:
+            availability = "available" if status.available else "missing"
+            if status.error:
+                detail = f"error={status.error}"
+            elif status.version:
+                detail = f"version={status.version}"
+            else:
+                detail = "version=unknown"
+            path_display = f"path={status.path}" if status.path else "path=<not found>"
+            console.print(f"- {status.name}: {availability} ({path_display}, {detail})")
+    any_failures = any((not status.available) or status.error for status in statuses)
+    return 1 if any_failures else 0
 
 
 def _report_from_payload(payload: dict) -> Report:
@@ -338,6 +362,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_parser = subparsers.add_parser("list-managers", help="List supported package managers")
     list_parser.set_defaults(func=cmd_list_managers)
+
+    diag_parser = subparsers.add_parser("diagnostics", help="Inspect local manager tooling")
+    diag_parser.add_argument("--json", action="store_true", help="Emit diagnostics as JSON")
+    diag_parser.add_argument("--log-level", default="INFO")
+    diag_parser.set_defaults(func=cmd_diagnostics)
 
     return parser
 

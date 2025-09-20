@@ -43,12 +43,23 @@ def _float_env(name: str, default: float) -> float:
     return value if value > 0 else default
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if not normalized:
+        return default
+    return normalized in {"1", "true", "yes", "on"}
+
+
 POLICY_ANALYSIS_CONCURRENCY = _int_env("RTX_POLICY_CONCURRENCY", 16)
 HTTP_TIMEOUT = _float_env("RTX_HTTP_TIMEOUT", 5.0)
 HTTP_RETRIES = _non_negative_int_env("RTX_HTTP_RETRIES", 2)
 OSV_BATCH_SIZE = _int_env("RTX_OSV_BATCH_SIZE", 18)
 OSV_MAX_CONCURRENCY = _int_env("RTX_OSV_MAX_CONCURRENCY", 4)
 OSV_CACHE_SIZE = _non_negative_int_env("RTX_OSV_CACHE_SIZE", 512)
+DISABLE_OSV = _bool_env("RTX_DISABLE_OSV", False)
 GITHUB_MAX_CONCURRENCY = _int_env("RTX_GITHUB_MAX_CONCURRENCY", 6)
 
 OSV_API_URL = "https://api.osv.dev/v1/querybatch"

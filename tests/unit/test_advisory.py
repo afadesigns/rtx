@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+import httpx
 import pytest
 
 from rtx import config
@@ -47,6 +48,34 @@ async def test_osv_queries_use_expected_ecosystem_names(monkeypatch, tmp_path: P
 
     ecosystems = [query["package"]["ecosystem"] for query in captured[0]["queries"]]
     assert ecosystems == ["PyPI", "crates.io"]
+
+
+@pytest.mark.asyncio
+async def test_osv_query_skips_on_client_error(monkeypatch, tmp_path: Path) -> None:
+    client = AdvisoryClient()
+
+    request = httpx.Request("POST", config.OSV_API_URL)
+    response = httpx.Response(status_code=400, request=request)
+
+    class _Failure:
+        def raise_for_status(self) -> None:
+            raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
+
+        def json(self) -> dict:
+            return {}
+
+    async def fake_post(*_: object, **__: object) -> _Failure:
+        return _Failure()
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+    dependencies = [Dependency("pypi", "requests", "2.31.0", True, tmp_path)]
+
+    try:
+        results = await client._query_osv(dependencies)
+    finally:
+        await client.close()
+
+    assert results == {"pypi:requests@2.31.0": []}
 
 
 @pytest.mark.asyncio
@@ -192,6 +221,20 @@ async def test_osv_query_uses_cache(monkeypatch, tmp_path: Path) -> None:
         await client.close()
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_osv_query_respects_disable_flag(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(config, "DISABLE_OSV", True)
+    client = AdvisoryClient()
+    dependencies = [Dependency("pypi", "requests", "2.31.0", True, tmp_path)]
+
+    try:
+        results = await client._query_osv(dependencies)
+    finally:
+        await client.close()
+
+    assert results == {"pypi:requests@2.31.0": []}
 
 
 @pytest.mark.asyncio

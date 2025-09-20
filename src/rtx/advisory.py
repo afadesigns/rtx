@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import logging
 from collections import OrderedDict
 from collections.abc import Iterable
 from itertools import chain
@@ -27,6 +28,8 @@ OSV_ECOSYSTEM_MAP: dict[str, str] = {
     "conda": "conda",
     "docker": "Docker",
 }
+
+logger = logging.getLogger(__name__)
 
 def _extract_numeric_score(raw: object) -> float:
     if isinstance(raw, int | float):
@@ -172,6 +175,10 @@ class AdvisoryClient:
         if not dependencies:
             return {}
 
+        if config.DISABLE_OSV:
+            logger.info("OSV lookups disabled via RTX_DISABLE_OSV")
+            return {dep.coordinate: [] for dep in dependencies}
+
         cached: dict[str, list[Advisory]] = {}
         unique_uncached: dict[str, Dependency] = {}
         for dep in dependencies:
@@ -196,7 +203,17 @@ class AdvisoryClient:
                 for dep in chunk_deps
             ]
             response = await self._client.post(config.OSV_API_URL, json={"queries": queries})
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                if status is not None and 400 <= status < 500:
+                    logger.warning(
+                        "OSV returned HTTP %s; continuing without OSV advisories",
+                        status,
+                    )
+                    return {dep.coordinate: [] for dep in chunk_deps}
+                raise
             payload = response.json()
             out: dict[str, list[Advisory]] = {}
             results = list(payload.get("results") or [])
