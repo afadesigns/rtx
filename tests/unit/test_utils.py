@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 
 from rtx.scanners import common
-from rtx.utils import AsyncRetry, Graph, chunked, env_flag, has_matching_file, slugify
+from rtx.utils import (
+    AsyncRetry,
+    Graph,
+    chunked,
+    env_flag,
+    has_matching_file,
+    slugify,
+    unique_preserving_order,
+)
 
 
 def test_normalize_version_handles_semver() -> None:
@@ -58,6 +66,12 @@ def test_chunked_supports_iterables() -> None:
 
     chunks = list(chunked(generator(), 2))
     assert chunks == [[0, 1], [2, 3], [4]]
+
+
+def test_unique_preserving_order_respects_key() -> None:
+    values = ["Alpha", "beta", "ALPHA", "Beta", "gamma"]
+    assert unique_preserving_order(values) == ["Alpha", "beta", "ALPHA", "Beta", "gamma"]
+    assert unique_preserving_order(values, key=str.lower) == ["Alpha", "beta", "gamma"]
 
 
 @pytest.mark.asyncio

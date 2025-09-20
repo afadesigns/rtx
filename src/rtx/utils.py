@@ -123,6 +123,18 @@ def multiline(text: str) -> str:
     return textwrap.dedent(text).strip()
 
 
+def unique_preserving_order(values: Iterable[T], *, key: Callable[[T], Any] | None = None) -> List[T]:
+    seen: Dict[Any, None] = {}
+    output: List[T] = []
+    for value in values:
+        marker = key(value) if key else value
+        if marker in seen:
+            continue
+        seen[marker] = None
+        output.append(value)
+    return output
+
+
 @lru_cache(maxsize=None)
 def load_json_resource(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))

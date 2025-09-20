@@ -105,12 +105,12 @@ async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                 200,
                 json={
                     "info": {
-                        "maintainers": [{"username": "alice"}],
+                        "maintainers": [{"username": "alice"}, {"username": "ALICE"}],
                         "author": "bob",
                     },
                     "releases": {
                         "1.0.0": [
-                            {"upload_time_iso_8601": older.isoformat()},
+                            {"upload_time_iso_8601": older.isoformat(), "yanked": True},
                             {"upload_time": now.replace(microsecond=0).isoformat() + "Z"},
                         ],
                         "0.9.0": [{"upload_time_iso_8601": (now - timedelta(days=31)).isoformat()}],
@@ -151,7 +151,8 @@ async def test_fetch_npm_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                         "1.0.0": now,
                         "0.9.0": "2020-01-01T00:00:00.000Z",
                     },
-                    "maintainers": [{"name": "alice"}],
+                    "maintainers": [],
+                    "author": {"name": "Acme Corp"},
                 },
             )
         return httpx.Response(404)
@@ -167,7 +168,7 @@ async def test_fetch_npm_parses_metadata(monkeypatch, tmp_path: Path) -> None:
 
     assert metadata.latest_release is not None
     assert metadata.releases_last_30d >= 1
-    assert "alice" in metadata.maintainers
+    assert metadata.maintainers == ["Acme Corp"]
 
 
 @pytest.mark.asyncio

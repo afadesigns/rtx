@@ -12,7 +12,7 @@ import httpx
 from rtx import config
 from rtx.exceptions import AdvisoryServiceError
 from rtx.models import Advisory, Dependency, Severity, SEVERITY_RANK
-from rtx.utils import AsyncRetry, chunked, env_flag
+from rtx.utils import AsyncRetry, chunked, env_flag, unique_preserving_order
 
 OSV_ECOSYSTEM_MAP: Dict[str, str] = {
     "pypi": "PyPI",
@@ -133,10 +133,10 @@ class AdvisoryClient:
                         source=advisory.source,
                         severity=advisory.severity,
                         summary=advisory.summary,
-                        references=list(dict.fromkeys(advisory.references)),
+                        references=unique_preserving_order(advisory.references),
                     )
                     continue
-                references = list(dict.fromkeys(existing.references + advisory.references))
+                references = unique_preserving_order(existing.references + advisory.references)
                 summary = existing.summary or advisory.summary
                 if SEVERITY_RANK[advisory.severity.value] > SEVERITY_RANK[existing.severity.value]:
                     summary = advisory.summary or summary
@@ -281,14 +281,22 @@ class AdvisoryClient:
             )
             for node in nodes:
                 advisory_node = node.get("advisory", {})
-                severity = _severity_from_github(node.get("severity"))
+                severity_label = node.get("severity") or advisory_node.get("severity")
+                severity = _severity_from_github(severity_label)
+                references = unique_preserving_order(
+                    (
+                        ref.get("url")
+                        for ref in (advisory_node.get("references", []) or [])
+                        if isinstance(ref, dict) and isinstance(ref.get("url"), str)
+                    ),
+                )
                 advisories.append(
                     Advisory(
                         identifier=advisory_node.get("ghsaId", "GHSA-unknown"),
                         source="github",
                         severity=severity,
                         summary=advisory_node.get("summary", ""),
-                        references=[ref.get("url") for ref in advisory_node.get("references", []) if isinstance(ref, dict) and ref.get("url")],
+                        references=references,
                     )
                 )
             return advisories

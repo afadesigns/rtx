@@ -107,9 +107,14 @@ async def test_github_query_deduplicates_packages(monkeypatch, tmp_path: Path) -
                             "advisory": {
                                 "ghsaId": "GHSA-1234-5678",
                                 "summary": "Example",
-                                "references": [{"url": "https://example.com"}],
+                                "severity": "CRITICAL",
+                                "references": [
+                                    {"url": "https://example.com"},
+                                    {"url": "https://example.com"},
+                                    {"url": "https://another.example"},
+                                ],
                             },
-                            "severity": "HIGH",
+                            "severity": None,
                             "vulnerableVersionRange": ">=0",
                         },
                         {
@@ -143,8 +148,9 @@ async def test_github_query_deduplicates_packages(monkeypatch, tmp_path: Path) -
     first = results["pypi:requests@2.31.0"]
     second = results["pypi:requests@2.30.0"]
     assert first and second
-    assert first[0].severity is Severity.HIGH
+    assert first[0].severity is Severity.CRITICAL
     assert first[1].severity is Severity.MEDIUM
+    assert first[0].references == ["https://example.com", "https://another.example"]
 
 
 @pytest.mark.asyncio

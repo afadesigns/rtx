@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable, Dict, Optional
+from functools import lru_cache
+from typing import Awaitable, Callable, Dict, List, Optional
 
 import httpx
 
 from rtx import config
 from rtx.models import Dependency
-from rtx.utils import AsyncRetry
+from rtx.utils import AsyncRetry, unique_preserving_order
 
 ISO_FORMATS = [
     "%Y-%m-%dT%H:%M:%S.%f%z",
@@ -26,10 +27,13 @@ def _normalize_datetime(value: datetime) -> datetime:
     return value
 
 
+@lru_cache(maxsize=2048)
 def _parse_date(value: str | None) -> Optional[datetime]:
-    if not value:
+    if value is None:
         return None
     trimmed = value.strip()
+    if not trimmed:
+        return None
     if trimmed.endswith("Z"):
         trimmed = f"{trimmed[:-1]}+00:00"
     for fmt in ISO_FORMATS:
@@ -169,24 +173,48 @@ class MetadataClient:
         for version, files in releases.items():
             if not files:
                 continue
-            total += 1
             upload_time = None
+            has_active_file = False
             if isinstance(files, list):
                 for file_meta in files:
                     if not isinstance(file_meta, dict):
                         continue
+                    if file_meta.get("yanked"):
+                        continue
+                    has_active_file = True
                     timestamp = file_meta.get("upload_time_iso_8601") or file_meta.get("upload_time")
                     parsed = _parse_date(timestamp if isinstance(timestamp, str) else None)
                     if parsed is not None and (upload_time is None or parsed > upload_time):
                         upload_time = parsed
+            if not has_active_file:
+                continue
+            total += 1
             if upload_time and (not last_release or upload_time > last_release):
                 last_release = upload_time
             if upload_time and (now - upload_time).days <= 30:
                 releases_last_30d += 1
-        maintainers = [user.get("username") for user in data.get("info", {}).get("maintainers", []) if isinstance(user, dict) and user.get("username")]
-        if not maintainers:
-            maintainers = [data.get("info", {}).get("author"), data.get("info", {}).get("maintainer")]  # type: ignore[list-item]
-        maintainers = [m for m in maintainers if isinstance(m, str) and m]
+        info = data.get("info", {}) if isinstance(data, dict) else {}
+        maintainer_entries = info.get("maintainers", []) if isinstance(info, dict) else []
+        maintainer_names: List[str] = []
+        for entry in maintainer_entries:
+            name: Optional[str] = None
+            if isinstance(entry, dict):
+                raw = entry.get("username") or entry.get("name")
+                if isinstance(raw, str):
+                    name = raw.strip()
+            elif isinstance(entry, str):
+                name = entry.strip()
+            if name:
+                maintainer_names.append(name)
+        if not maintainer_names and isinstance(info, dict):
+            for candidate in (info.get("author"), info.get("maintainer")):
+                if isinstance(candidate, str) and candidate.strip():
+                    maintainer_names.append(candidate.strip())
+                elif isinstance(candidate, dict):
+                    label = candidate.get("name")
+                    if isinstance(label, str) and label.strip():
+                        maintainer_names.append(label.strip())
+        maintainers = unique_preserving_order(maintainer_names, key=str.casefold)
         return ReleaseMetadata(last_release, releases_last_30d, total, maintainers, dependency.ecosystem)
 
     async def _fetch_npm(self, dependency: Dependency) -> ReleaseMetadata:
@@ -197,7 +225,23 @@ class MetadataClient:
         response.raise_for_status()
         data = response.json()
         time_entries = data.get("time", {})
-        maintainers = [m.get("name") for m in data.get("maintainers", []) if isinstance(m, dict) and m.get("name")]
+        maintainer_candidates: List[str] = []
+        for maintainer in data.get("maintainers", []) or []:
+            if isinstance(maintainer, dict):
+                label = maintainer.get("name")
+                if isinstance(label, str) and label.strip():
+                    maintainer_candidates.append(label.strip())
+            elif isinstance(maintainer, str) and maintainer.strip():
+                maintainer_candidates.append(maintainer.strip())
+        if not maintainer_candidates:
+            author = data.get("author")
+            if isinstance(author, dict):
+                label = author.get("name")
+                if isinstance(label, str) and label.strip():
+                    maintainer_candidates.append(label.strip())
+            elif isinstance(author, str) and author.strip():
+                maintainer_candidates.append(author.strip())
+        maintainers = unique_preserving_order(maintainer_candidates, key=str.casefold)
         last_release = _parse_date(time_entries.get(dependency.version)) if isinstance(time_entries, dict) else None
         now = datetime.utcnow()
         releases_last_30d = 0
