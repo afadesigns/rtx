@@ -4,7 +4,7 @@ import asyncio
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
@@ -12,7 +12,26 @@ from rtx.exceptions import ManifestNotFound
 from rtx.models import Dependency, PackageFinding, Report
 from rtx.policy import TrustPolicyEngine
 from rtx.registry import get_scanners
-from rtx.utils import Graph
+from rtx.utils import Graph, unique_preserving_order
+
+
+def _merge_dependency(existing: Dependency, new: Dependency) -> Dependency:
+    combined_metadata = {**existing.metadata, **new.metadata}
+    manifests: List[str] = [str(existing.manifest), str(new.manifest)]
+    previous = combined_metadata.get("manifests")
+    if isinstance(previous, Sequence) and not isinstance(previous, str):
+        manifests.extend(str(value) for value in previous)
+    elif isinstance(previous, str):
+        manifests.append(previous)
+    combined_metadata["manifests"] = unique_preserving_order(manifests)
+    return Dependency(
+        ecosystem=existing.ecosystem,
+        name=existing.name,
+        version=existing.version,
+        direct=existing.direct or new.direct,
+        manifest=existing.manifest,
+        metadata=combined_metadata,
+    )
 
 
 async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None) -> Report:
@@ -36,22 +55,7 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
         if existing is None:
             unique_deps[dep.coordinate] = dep
             continue
-        combined_metadata = {**existing.metadata, **dep.metadata}
-        manifest_values = {str(existing.manifest), str(dep.manifest)}
-        previous_manifests = combined_metadata.get("manifests")
-        if isinstance(previous_manifests, (list, tuple, set)):
-            manifest_values.update(str(path) for path in previous_manifests)
-        elif isinstance(previous_manifests, str):
-            manifest_values.add(previous_manifests)
-        combined_metadata["manifests"] = sorted(manifest_values)
-        unique_deps[dep.coordinate] = Dependency(
-            ecosystem=existing.ecosystem,
-            name=existing.name,
-            version=existing.version,
-            direct=existing.direct or dep.direct,
-            manifest=existing.manifest,
-            metadata=combined_metadata,
-        )
+        unique_deps[dep.coordinate] = _merge_dependency(existing, dep)
     dependencies = list(unique_deps.values())
 
     async with AdvisoryClient() as advisory_client:
@@ -93,9 +97,17 @@ async def scan_project_async(path: Path, *, managers: Optional[List[str]] = None
     direct_count = sum(1 for finding in findings if finding.dependency.direct)
     manager_usage = Counter(finding.dependency.ecosystem for finding in findings)
 
+    manager_list: List[str]
+    if used_managers:
+        manager_list = unique_preserving_order(used_managers, key=str.casefold)
+    elif managers:
+        manager_list = unique_preserving_order(managers, key=str.casefold)  # type: ignore[arg-type]
+    else:
+        manager_list = []
+
     report = Report(
         path=root,
-        managers=sorted(set(used_managers or managers or [])),
+        managers=manager_list,
         findings=sorted(findings, key=lambda f: f.dependency.coordinate),
         generated_at=datetime.utcnow(),
         stats={
