@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
+from collections.abc import Iterable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any
 
 SEVERITY_RANK = {
     "none": 0,
@@ -23,7 +26,7 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
     @classmethod
-    def from_score(cls, score: float) -> "Severity":
+    def from_score(cls, score: float) -> Severity:
         if score >= 0.85:
             return cls.CRITICAL
         if score >= 0.7:
@@ -35,42 +38,97 @@ class Severity(str, Enum):
         return cls.NONE
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Dependency:
     ecosystem: str
     name: str
     version: str
     direct: bool
     manifest: Path
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def coordinate(self) -> str:
         return f"{self.ecosystem}:{self.name}@{self.version}"
 
+    @property
+    def normalized_name(self) -> str:
+        """Case-insensitive identifier for cross-ecosystem lookups."""
+        return self.name.casefold()
 
-@dataclass
+    @property
+    def normalized_ecosystem(self) -> str:
+        """Case-insensitive ecosystem key used for lookups."""
+        return self.ecosystem.casefold()
+
+
+@dataclass(slots=True)
 class Advisory:
     identifier: str
     source: str
     severity: Severity
     summary: str
-    references: List[str] = field(default_factory=list)
+    references: list[str] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class TrustSignal:
     category: str
     severity: Severity
     message: str
-    evidence: Dict[str, Any] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
+class SignalSummary:
+    counts: dict[str, int]
+    severity_counts: dict[str, dict[str, int]]
+    severity_totals: dict[str, int]
+
+    @classmethod
+    def from_findings(cls, findings: Iterable[PackageFinding]) -> SignalSummary:
+        category_counts: Counter[str] = Counter()
+        per_category_severity: dict[str, Counter[str]] = defaultdict(Counter)
+        severity_totals: Counter[str] = Counter()
+        for finding in findings:
+            for signal in finding.signals:
+                category_counts[signal.category] += 1
+                per_category_severity[signal.category][signal.severity.value] += 1
+                severity_totals[signal.severity.value] += 1
+
+        def _sort_severity(data: dict[str, int]) -> dict[str, int]:
+            return dict(
+                sorted(
+                    data.items(),
+                    key=lambda item: SEVERITY_RANK.get(item[0], float("inf")),
+                )
+            )
+
+        return cls(
+            counts=dict(sorted(category_counts.items())),
+            severity_counts={
+                category: _sort_severity(dict(counter))
+                for category, counter in sorted(per_category_severity.items())
+            },
+            severity_totals=_sort_severity(dict(severity_totals)),
+        )
+
+    def has_data(self) -> bool:
+        return bool(self.counts)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "counts": self.counts,
+            "severity_counts": self.severity_counts,
+            "severity_totals": self.severity_totals,
+        }
+
+
+@dataclass(slots=True)
 class PackageFinding:
     dependency: Dependency
-    advisories: List[Advisory] = field(default_factory=list)
-    signals: List[TrustSignal] = field(default_factory=list)
+    advisories: list[Advisory] = field(default_factory=list)
+    signals: list[TrustSignal] = field(default_factory=list)
     score: float = 0.0
 
     @property
@@ -87,18 +145,27 @@ class PackageFinding:
         return max(severities, key=lambda level: SEVERITY_RANK[level.value])
 
 
-@dataclass
+@dataclass(slots=True)
 class Report:
     path: Path
-    managers: List[str]
-    findings: List[PackageFinding]
+    managers: list[str]
+    findings: list[PackageFinding]
     generated_at: datetime
-    stats: Dict[str, Any] = field(default_factory=dict)
+    stats: dict[str, Any] = field(default_factory=dict)
+    _signal_summary: SignalSummary | None = field(
+        init=False, default=None, repr=False, compare=False
+    )
+    _summary_cache: dict[str, Any] | None = field(
+        init=False, default=None, repr=False, compare=False
+    )
 
     def highest_severity(self) -> Severity:
         if not self.findings:
             return Severity.NONE
-        return max((finding.verdict for finding in self.findings), key=lambda s: SEVERITY_RANK[s.value])
+        return max(
+            (finding.verdict for finding in self.findings),
+            key=lambda severity: SEVERITY_RANK[severity.value],
+        )
 
     def exit_code(self) -> int:
         verdict = self.highest_severity()
@@ -108,20 +175,38 @@ class Report:
             return 1
         return 0
 
-    def summary(self) -> Dict[str, Any]:
-        counts: Dict[str, int] = {severity.value: 0 for severity in Severity}
+    def summary(self) -> dict[str, Any]:
+        cached = self._summary_cache
+        if cached is not None:
+            return deepcopy(cached)
+        counts: dict[str, int] = {severity.value: 0 for severity in Severity}
+        direct = 0
+        manager_usage: Counter[str] = Counter()
         for finding in self.findings:
             counts[finding.verdict.value] += 1
-        return {
+            if finding.dependency.direct:
+                direct += 1
+            manager_usage[finding.dependency.ecosystem] += 1
+        signal_summary = self.signal_summary
+        indirect = len(self.findings) - direct
+        summary = {
             "generated_at": self.generated_at.isoformat(),
             "managers": self.managers,
             "counts": counts,
             "total": len(self.findings),
+            "direct_dependencies": direct,
+            "indirect_dependencies": indirect,
+            "manager_usage": dict(sorted(manager_usage.items())),
             "exit_code": self.exit_code(),
             "path": str(self.path),
+            "signal_counts": signal_summary.counts,
+            "signal_severity_counts": signal_summary.severity_counts,
+            "signal_severity_totals": signal_summary.severity_totals,
         }
+        self._summary_cache = summary
+        return deepcopy(summary)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "summary": self.summary(),
             "findings": [
@@ -157,8 +242,17 @@ class Report:
                 }
                 for finding in self.findings
             ],
-            "stats": self.stats,
+            "stats": dict(self.stats),
+            "signal_summary": self.signal_summary.to_dict(),
         }
 
     def __iter__(self) -> Iterable[PackageFinding]:
         return iter(self.findings)
+
+    @property
+    def signal_summary(self) -> SignalSummary:
+        cached = self._signal_summary
+        if cached is None:
+            cached = SignalSummary.from_findings(self.findings)
+            self._signal_summary = cached
+        return cached

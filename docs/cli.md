@@ -11,6 +11,8 @@ Scan the current directory (or `--path`) for manifests and compute a trust repor
 - `--json-output PATH` — persist JSON report in addition to primary output
 - `--html-output PATH` — persist HTML report
 - `--sbom-output PATH` — write CycloneDX SBOM
+- `--show-signal-summary` — print aggregated signal counts and severities after rendering
+- `--signal-summary-output PATH` — write signal summary JSON alongside the report
 - `--log-level LEVEL` — logging (`INFO` default)
 
 ## `rtx pre-upgrade`
@@ -31,6 +33,8 @@ Render a stored JSON report into table, JSON, or HTML.
 - `--input PATH` — path to JSON report
 - `--format table|json|html`
 - `--output PATH` — required for JSON/HTML
+- `--show-signal-summary` — print aggregated signal counts and severities after rendering
+- `--signal-summary-output PATH` — write signal summary JSON alongside the report
 
 ## `rtx list-managers`
 List supported package managers and manifest patterns.

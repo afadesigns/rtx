@@ -17,6 +17,8 @@
     .severity-low { color: #34d399; font-weight: bold; }
     .severity-none { color: #94a3b8; }
     .badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.75rem; background: rgba(59, 130, 246, 0.2); }
+    .evidence { margin: 0.5rem 0 0 0.75rem; font-size: 0.8rem; color: #cbd5f5; }
+    .evidence li { list-style: disc; }
     footer { margin-top: 3rem; font-size: 0.85rem; color: #94a3b8; }
   </style>
 </head>
@@ -33,6 +35,32 @@
     </div>
     {% endfor %}
   </div>
+
+  {% if summary.signal_counts %}
+  <h2>Signal Breakdown</h2>
+  <div class="summary">
+    {% for category, count in summary.signal_counts.items() %}
+    <div class="card">
+      <div class="badge">{{ category }}</div>
+      <h2>{{ count }}</h2>
+      <p>Signals</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if summary.signal_severity_totals %}
+  <h2>Signal Severities</h2>
+  <div class="summary">
+    {% for severity, count in summary.signal_severity_totals.items() %}
+    <div class="card">
+      <div class="badge severity-{{ severity }}">{{ severity | upper }}</div>
+      <h2>{{ count }}</h2>
+      <p>Signals</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <table>
     <thead>
@@ -68,7 +96,17 @@
           {% if finding.signals %}
             <ul>
               {% for signal in finding.signals %}
-                <li><span class="badge severity-{{ signal.severity }}">{{ signal.category }}</span> {{ signal.message }}</li>
+                <li>
+                  <span class="badge severity-{{ signal.severity }}">{{ signal.category }}</span>
+                  {{ signal.message }}
+                  {% if signal.evidence %}
+                  <ul class="evidence">
+                    {% for key, value in signal.evidence.items() %}
+                      <li><code>{{ key }}</code>: {{ value }}</li>
+                    {% endfor %}
+                  </ul>
+                  {% endif %}
+                </li>
               {% endfor %}
             </ul>
           {% else %}

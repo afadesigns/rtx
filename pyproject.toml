@@ -7,7 +7,7 @@ name = "rtx-trust"
 version = "0.1.0"
 description = "Real Tracker X: cross-ecosystem dependency trust scanner"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Andreas Fahl" }]
 keywords = ["security", "supply-chain", "dependencies", "osv", "sbom"]
@@ -17,16 +17,21 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Topic :: Software Development :: Build Tools",
 ]
 dependencies = [
-    "httpx==0.27.0",
+    "httpx>=0.27.2,<0.28",
     "rich==13.7.1",
     "packaging==24.1",
     "jinja2==3.1.4",
-    "pyyaml==6.0.1",
+    "pyyaml>=6.0.2,<6.1",
+    "tomli>=2.0.1; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -67,7 +72,9 @@ packages = ["src/rtx"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 ignore = ["B905"]
 
@@ -75,7 +82,7 @@ ignore = ["B905"]
 "tests/**" = ["S101", "B008"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 strict = true
 warn_unused_configs = true
 plugins = []

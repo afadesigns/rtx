@@ -28,7 +28,12 @@ class MavenScanner(BaseScanner):
             if path.exists():
                 for line in path.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
-                    if line.startswith(("implementation", "api", "compileOnly", "runtimeOnly")) and "(" in line:
+                    if (
+                        line.startswith(
+                            ("implementation", "api", "compileOnly", "runtimeOnly")
+                        )
+                        and "(" in line
+                    ):
                         coords = line.split("(", 1)[1].rstrip(")").strip("'\"")
                         if ":" in coords:
                             parts = coords.split(":")

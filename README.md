@@ -24,6 +24,27 @@ rtx pre-computes the blast radius of any change. It ingests manifests from Pytho
 pip install rtx-trust
 ```
 
+> Requires Python 3.11 or newer. Use a virtual environment or tools like `uv`, Poetry, Conda, or `pipx` to manage interpreters and isolation.
+
+### Environment managers
+- **uv** — install the CLI as an isolated tool that tracks updates automatically:
+  ```bash
+  uv tool install --python 3.11 rtx-trust
+  ```
+  This keeps `rtx` on your `PATH` without polluting the active environment and lets you pin the interpreter version used to run the scanner.
+- **Poetry** — add `rtx-trust` to an existing project and capture it in `poetry.lock`:
+  ```bash
+  poetry add rtx-trust
+  ```
+  Poetry resolves the dependency and updates both `pyproject.toml` and the lock file automatically.
+- **Conda / Mamba** — create an environment with a modern Python, then install via the environment’s pip so the package stays isolated:
+  ```bash
+  conda create -n rtx python=3.11 pip
+  conda activate rtx
+  python -m pip install rtx-trust
+  ```
+  Always install pip-based dependencies after your conda packages to avoid solver conflicts.
+
 ## Quickstart
 ```bash
 rtx scan --format table
@@ -32,11 +53,24 @@ rtx pre-upgrade --manager npm --package react --version 18.0.0
 rtx report --format json --output reports/rtx.json
 ```
 
+## Configuration & Tuning
+- Set `RTX_POLICY_CONCURRENCY` to throttle how many policy evaluations run in parallel (default `16`). Lower the value when scanning inside constrained CI runners or behind strict rate limits.
+- Network-bound clients honor `RTX_HTTP_TIMEOUT` (seconds, default `5.0`) and `RTX_HTTP_RETRIES` (non-negative integer, default `2`) to tune resilience versus responsiveness.
+- Set `RTX_GITHUB_MAX_CONCURRENCY` to bound concurrent GitHub Security API requests (default `6`).
+- Toggle `RTX_DISABLE_OSV=1` to bypass OSV lookups when running offline or during smoke tests.
+- Toggle `RTX_DISABLE_GITHUB_ADVISORIES=1` when running in air-gapped or rate-limited environments to skip GitHub lookups entirely.
+- Control OSV batching with `RTX_OSV_BATCH_SIZE` (default `18`), cap the in-memory OSV cache with `RTX_OSV_CACHE_SIZE` (default `512`), and bound concurrent OSV API requests via `RTX_OSV_MAX_CONCURRENCY` (default `4`).
+- Lockfile detection covers `poetry.lock`, `uv.lock`, and `environment.yml` so mixed-language workspaces are fully scanned without manual manifest hints.
+- CLI format switches are validated directly by argparse. Passing an unsupported format (for example `--format pdf`) exits with an actionable error before any network calls occur.
+- Providing an unknown package manager via `--manager` now fails fast with the offending name, making misconfigurations obvious during automation.
+- Run `make smoke` for an end-to-end check that executes diagnostics and an offline scan against `examples/mixed`.
+
 ## CLI Overview
 - `rtx scan`: Detect manifests in the current directory, build the dependency graph, and score trust.
 - `rtx pre-upgrade`: Simulate dependency upgrades and compare trust deltas before applying.
 - `rtx report`: Render persisted reports in JSON, table, or HTML formats for CI workflows.
 - `rtx list-managers`: List supported package managers, manifest file patterns, and detection confidence.
+- `rtx diagnostics`: Verify local availability of `pip`, `npm`, and `uv`; exits non-zero when a tool is missing or misconfigured.
 
 ## Library API
 ```python
@@ -70,7 +104,7 @@ print(report.summary())
 
 ## FAQ
 **Why another dependency scanner?** rtx focuses on pre-upgrade guardrails, not post-incident triage.  
-**Does it phone home?** No. Network requests are limited to advisories and metadata endpoints and respect enterprise proxies.  
+**Does it phone home?** No. Network requests are limited to advisories and metadata endpoints; they respect enterprise proxies.  
 **Can I extend support?** Yes. Create a plugin under `src/rtx/scanners` and register it in `rtx.registry`.  
 **How do exit codes map to severity?** 0 = safe, 1 = medium trust gaps, 2 = high/critical risk.
 

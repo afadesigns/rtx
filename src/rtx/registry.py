@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, List, Type
-
 from rtx.scanners import (
     BaseScanner,
     BrewScanner,
@@ -16,8 +14,9 @@ from rtx.scanners import (
     PyPIScanner,
     RubyGemsScanner,
 )
+from rtx.utils import unique_preserving_order
 
-SCANNER_CLASSES: Dict[str, Type[BaseScanner]] = {
+SCANNER_CLASSES: dict[str, type[BaseScanner]] = {
     "npm": NpmScanner,
     "pypi": PyPIScanner,
     "maven": MavenScanner,
@@ -31,12 +30,45 @@ SCANNER_CLASSES: Dict[str, Type[BaseScanner]] = {
     "docker": DockerScanner,
 }
 
+SCANNER_ALIASES: dict[str, str] = {
+    "pip": "pypi",
+    "pip3": "pypi",
+    "python": "pypi",
+    "python3": "pypi",
+    "poetry": "pypi",
+    "uv": "pypi",
+    "node": "npm",
+    "nodejs": "npm",
+    "yarn": "npm",
+    "gem": "rubygems",
+    "ruby": "rubygems",
+    "rust": "cargo",
+    "gomod": "go",
+}
 
-def get_scanners(names: List[str] | None = None) -> List[BaseScanner]:
-    selected = names or list(SCANNER_CLASSES.keys())
-    scanners: List[BaseScanner] = []
-    for name in selected:
-        cls = SCANNER_CLASSES.get(name)
-        if cls is not None:
-            scanners.append(cls())
+
+def get_scanners(names: list[str] | None = None) -> list[BaseScanner]:
+    selected = (
+        list(SCANNER_CLASSES.keys())
+        if names is None
+        else unique_preserving_order(names, key=str.casefold)
+    )
+
+    scanners: list[BaseScanner] = []
+    unknown: list[str] = []
+    seen: set[str] = set()
+    for raw_name in selected:
+        normalized = raw_name.casefold()
+        canonical = SCANNER_ALIASES.get(normalized, normalized)
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        cls = SCANNER_CLASSES.get(canonical)
+        if cls is None:
+            unknown.append(raw_name)
+            continue
+        scanners.append(cls())
+    if unknown:
+        message = ", ".join(unique_preserving_order(unknown, key=str.casefold))
+        raise ValueError(f"Unknown package manager(s): {message}")
     return scanners
