@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, cast
@@ -13,14 +12,14 @@ from rtx.exceptions import ManifestNotFound
 from rtx.models import Dependency, PackageFinding, Report
 from rtx.policy import TrustPolicyEngine
 from rtx.registry import get_scanners
-from rtx.utils import Graph, unique_preserving_order
+from rtx.utils import Graph, is_non_string_sequence, unique_preserving_order
 
 
 def _merge_dependency(existing: Dependency, new: Dependency) -> Dependency:
     combined_metadata = {**existing.metadata, **new.metadata}
     manifests: list[str] = [str(existing.manifest), str(new.manifest)]
     previous = combined_metadata.get("manifests")
-    if isinstance(previous, Sequence) and not isinstance(previous, str):
+    if is_non_string_sequence(previous):
         manifests.extend(str(value) for value in previous)
     elif isinstance(previous, str):
         manifests.append(previous)

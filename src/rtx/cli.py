@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -16,6 +16,7 @@ from rich.console import Console
 from rtx.exceptions import ManifestNotFound, ReportRenderingError
 from rtx.models import Report, Severity
 from rtx.system import collect_manager_diagnostics
+from rtx.utils import is_non_string_sequence
 
 
 def _configure_logging(level: str) -> None:
@@ -224,7 +225,7 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
     findings: list[PackageFinding] = []
     entries = (
         (entry for entry in findings_data if isinstance(entry, Mapping))
-        if isinstance(findings_data, Sequence) and not isinstance(findings_data, (str, bytes))
+        if is_non_string_sequence(findings_data)
         else []
     )
     for entry in entries:
@@ -239,15 +240,14 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
         )
         advisories = []
         raw_advisories = entry.get("advisories", [])
-        if isinstance(raw_advisories, Sequence) and not isinstance(raw_advisories, (str, bytes)):
+        if is_non_string_sequence(raw_advisories):
             for adv in raw_advisories:
                 if not isinstance(adv, Mapping):
                     continue
                 references_raw = adv.get("references", [])
                 references = (
                     [ref for ref in references_raw if isinstance(ref, str)]
-                    if isinstance(references_raw, Sequence)
-                    and not isinstance(references_raw, (str, bytes))
+                    if is_non_string_sequence(references_raw)
                     else []
                 )
                 advisories.append(
@@ -261,7 +261,7 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
                 )
         signals = []
         raw_signals = entry.get("signals", [])
-        if isinstance(raw_signals, Sequence) and not isinstance(raw_signals, (str, bytes)):
+        if is_non_string_sequence(raw_signals):
             for sig in raw_signals:
                 if not isinstance(sig, Mapping):
                     continue
@@ -292,7 +292,7 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
     managers_data = summary.get("managers", [])
     if isinstance(managers_data, str):
         managers_list: list[str] = [managers_data]
-    elif isinstance(managers_data, Sequence) and not isinstance(managers_data, (str, bytes)):
+    elif is_non_string_sequence(managers_data):
         managers_list = [str(item) for item in managers_data]
     else:
         managers_list = []

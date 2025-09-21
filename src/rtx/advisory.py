@@ -5,7 +5,7 @@ import os
 import re
 import logging
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from itertools import chain
 from types import TracebackType
 from typing import Any, cast
@@ -15,7 +15,13 @@ import httpx
 from rtx import config
 from rtx.exceptions import AdvisoryServiceError
 from rtx.models import SEVERITY_RANK, Advisory, Dependency, Severity
-from rtx.utils import AsyncRetry, chunked, env_flag, unique_preserving_order
+from rtx.utils import (
+    AsyncRetry,
+    chunked,
+    env_flag,
+    is_non_string_sequence,
+    unique_preserving_order,
+)
 
 OSV_ECOSYSTEM_MAP: dict[str, str] = {
     "pypi": "PyPI",
@@ -95,10 +101,7 @@ def _severity_from_github(label: str | None) -> Severity:
 def _severity_from_osv(entry: Mapping[str, object]) -> Severity:
     severity_obj = entry.get("severity")
     severity_entries = (
-        severity_obj
-        if isinstance(severity_obj, Iterable)
-        and not isinstance(severity_obj, (str, bytes))
-        else []
+        severity_obj if is_non_string_sequence(severity_obj) else []
     )
     max_score = 0.0
     for item in severity_entries:
@@ -285,9 +288,7 @@ class AdvisoryClient:
                     severity = _severity_from_osv(vuln)
                     references_payload = vuln.get("references", [])
                     references: list[str] = []
-                    if isinstance(references_payload, Sequence) and not isinstance(
-                        references_payload, (str, bytes)
-                    ):
+                    if is_non_string_sequence(references_payload):
                         for ref in references_payload:
                             if isinstance(ref, Mapping):
                                 url = ref.get("url")
@@ -396,9 +397,7 @@ class AdvisoryClient:
             nodes_payload = (
                 data.get("data", {}).get("securityVulnerabilities", {}).get("nodes", [])
             )
-            if isinstance(nodes_payload, Sequence) and not isinstance(
-                nodes_payload, (str, bytes)
-            ):
+            if is_non_string_sequence(nodes_payload):
                 nodes = [node for node in nodes_payload if isinstance(node, Mapping)]
             else:
                 nodes = []
@@ -411,9 +410,7 @@ class AdvisoryClient:
                 severity = _severity_from_github(severity_label)
                 references_payload = advisory_node.get("references", [])
                 reference_urls: list[str] = []
-                if isinstance(references_payload, Sequence) and not isinstance(
-                    references_payload, (str, bytes)
-                ):
+                if is_non_string_sequence(references_payload):
                     for ref in references_payload:
                         if isinstance(ref, Mapping):
                             url = ref.get("url")

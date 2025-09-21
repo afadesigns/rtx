@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable, Iterable, Sequence
 from functools import cache
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeGuard, TypeVar
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -149,6 +149,12 @@ def unique_preserving_order(
         seen[marker] = None
         output.append(value)
     return output
+
+
+def is_non_string_sequence(value: object) -> TypeGuard[Sequence[object]]:
+    """Return True when ``value`` is a non-string/bytes sequence."""
+
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
 
 
 @cache
