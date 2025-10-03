@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import ClassVar
 
 from rtx.models import Dependency
 from rtx.scanners import common
@@ -9,13 +9,13 @@ from rtx.scanners.base import BaseScanner
 
 
 class BrewScanner(BaseScanner):
-    manager = "brew"
-    manifests = ["Brewfile"]
-    ecosystem = "homebrew"
+    manager: ClassVar[str] = "brew"
+    manifests: ClassVar[list[str]] = ["Brewfile"]
+    ecosystem: ClassVar[str] = "homebrew"
 
-    def scan(self, root: Path) -> List[Dependency]:
+    def scan(self, root: Path) -> list[Dependency]:
         brewfile = root / "Brewfile"
-        dependencies: Dict[str, str] = {}
+        dependencies: dict[str, str] = {}
         if brewfile.exists():
             dependencies.update(common.read_brewfile(brewfile))
 

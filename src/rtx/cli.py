@@ -16,7 +16,7 @@ from rich.console import Console
 from rtx.exceptions import ManifestNotFound, ReportRenderingError
 from rtx.models import Report, Severity
 from rtx.system import collect_manager_diagnostics
-from rtx.utils import is_non_string_sequence
+from rtx.utils import is_non_string_sequence, utc_now
 
 
 def _configure_logging(level: str) -> None:
@@ -287,7 +287,7 @@ def _report_from_payload(payload: Mapping[str, object]) -> Report:
 
     generated_at = summary.get("generated_at")
     timestamp = (
-        datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else datetime.utcnow()
+        datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else utc_now()
     )
     managers_data = summary.get("managers", [])
     if isinstance(managers_data, str):
@@ -431,7 +431,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    command = cast(Callable[[argparse.Namespace], int], getattr(args, "func"))
+    command = cast(Callable[[argparse.Namespace], int], args.func)
     return command(args)
 
 

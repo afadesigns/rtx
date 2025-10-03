@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from rtx.models import Report
 from rtx.sbom_cli import main as sbom_main
+from rtx.utils import utc_now
 
 
 @pytest.mark.parametrize("fmt", ["json", "html"])
@@ -21,7 +21,7 @@ def test_sbom_cli_writes_output(
             path=path,
             managers=managers or [],
             findings=[],
-            generated_at=datetime.utcnow(),
+            generated_at=utc_now(),
         )
 
     monkeypatch.setattr("rtx.sbom_cli.scan_project", fake_scan_project)

@@ -6,9 +6,10 @@ Report vulnerabilities confidentially to `security@afadesigns.com` (PGP fingerpr
 ## Supported Versions
 | Version | Supported |
 |---------|-----------|
-| 0.y.z   | ✅ (security + bug fixes)
+| 1.x     | ✅ (security + bug fixes)
+| 0.y.z   | ⚠️ (critical fixes only through 2025-12-31)
 
-We follow a rolling release model until 1.0. After 1.0, the latest two minor releases remain supported.
+The stable 1.x line receives feature and security updates. Legacy 0.y releases enter maintenance mode and only receive fixes for high and critical issues until the sunset date shown above.
 
 ## Disclosure Timeline
 1. Acknowledge receipt within 24 hours.

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -13,6 +12,7 @@ from rtx.models import (
     SignalSummary,
     TrustSignal,
 )
+from rtx.utils import utc_now
 
 
 def _finding_with_signals(category: str, severity: Severity) -> PackageFinding:
@@ -56,7 +56,7 @@ def test_report_uses_slots_and_defensive_stats(tmp_path: Path) -> None:
         path=tmp_path,
         managers=["pypi"],
         findings=[finding],
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
         stats={"dependency_count": 1},
     )
 
@@ -75,7 +75,7 @@ def test_report_summary_returns_defensive_copy(tmp_path: Path) -> None:
         path=tmp_path,
         managers=["pypi"],
         findings=[finding],
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
         stats={"dependency_count": 1},
     )
 

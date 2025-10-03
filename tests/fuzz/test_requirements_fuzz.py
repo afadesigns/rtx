@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-import random
+import secrets
 
 import pytest
 
@@ -23,5 +23,5 @@ def _fuzz_once(data: bytes, tmp_dir) -> None:
 def test_requirements_parser_fuzz(tmp_path) -> None:
     instrumented = atheris.instrument_func(_fuzz_once)
     for _ in range(64):
-        payload = os.urandom(random.randint(0, 128))
+        payload = os.urandom(secrets.randbelow(129))
         instrumented(payload, tmp_path)

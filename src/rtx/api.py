@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from datetime import datetime
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import Any, Awaitable, cast
+from typing import Any, cast
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
@@ -12,7 +12,7 @@ from rtx.exceptions import ManifestNotFound
 from rtx.models import Dependency, PackageFinding, Report
 from rtx.policy import TrustPolicyEngine
 from rtx.registry import get_scanners
-from rtx.utils import Graph, is_non_string_sequence, unique_preserving_order
+from rtx.utils import Graph, is_non_string_sequence, unique_preserving_order, utc_now
 
 
 def _merge_dependency(existing: Dependency, new: Dependency) -> Dependency:
@@ -117,7 +117,7 @@ async def scan_project_async(path: Path, *, managers: list[str] | None = None) -
         path=root,
         managers=manager_list,
         findings=sorted(findings, key=lambda f: f.dependency.coordinate),
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
         stats={
             "dependency_count": len(findings),
             "direct_dependencies": direct_count,

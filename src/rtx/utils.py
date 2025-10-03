@@ -8,6 +8,7 @@ import sys
 import textwrap
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Sequence
+from datetime import datetime, timezone
 from functools import cache
 from hashlib import sha256
 from pathlib import Path
@@ -36,6 +37,12 @@ else:  # pragma: no cover - fallback for Python <3.12
             if not chunk:
                 break
             yield chunk
+
+
+def utc_now() -> datetime:
+    """Return a naive UTC timestamp using timezone-aware arithmetic internally."""
+
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class AsyncRetry:
@@ -154,7 +161,7 @@ def unique_preserving_order(
 def is_non_string_sequence(value: object) -> TypeGuard[Sequence[object]]:
     """Return True when ``value`` is a non-string/bytes sequence."""
 
-    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+    return isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray)
 
 
 @cache

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
-import logging
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from itertools import chain

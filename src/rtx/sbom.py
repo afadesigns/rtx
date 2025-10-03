@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 from rtx import __version__
 from rtx.models import SEVERITY_RANK, PackageFinding, Report
-from rtx.utils import unique_preserving_order
+from rtx.utils import unique_preserving_order, utc_now
 
 
 class ComponentEntry(TypedDict):
@@ -122,7 +121,7 @@ def generate_sbom(report: Report) -> dict[str, object]:
                 affects = entry.get("affects", [])
                 references_list = entry.get("references", [])
                 entry["affects"] = unique_preserving_order(
-                    affects + [affects_entry], key=lambda item: item["ref"]
+                    [*affects, affects_entry], key=lambda item: item["ref"]
                 )
                 entry["references"] = unique_preserving_order(
                     references_list + references, key=lambda item: item["url"]
@@ -141,7 +140,7 @@ def generate_sbom(report: Report) -> dict[str, object]:
         "specVersion": "1.5",
         "version": 1,
         "metadata": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
             "tools": [
                 {
                     "vendor": "afadesigns",

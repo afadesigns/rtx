@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
-
-import pytest
 
 from rtx.api import scan_project
 from rtx.metadata import ReleaseMetadata
 from rtx.models import Dependency, PackageFinding
 from rtx.policy import TrustPolicyEngine
+from rtx.utils import utc_now
 
 
 def test_scan_project_examples(monkeypatch) -> None:
@@ -19,7 +17,7 @@ def test_scan_project_examples(monkeypatch) -> None:
 
     async def fake_metadata(_dep: Dependency) -> ReleaseMetadata:
         return ReleaseMetadata(
-            latest_release=datetime.utcnow(),
+            latest_release=utc_now(),
             releases_last_30d=1,
             total_releases=5,
             maintainers=["afahl"],

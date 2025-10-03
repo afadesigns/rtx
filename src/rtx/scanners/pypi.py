@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from packaging.requirements import InvalidRequirement, Requirement
 
@@ -30,7 +30,7 @@ class PyPIScanner(BaseScanner):
         dependencies: dict[str, str] = {}
         origins: dict[str, Path] = {}
         direct_flags: dict[str, bool] = {}
-        metadata_map: dict[str, dict[str, object]] = {}
+        metadata_map: dict[str, dict[str, Any]] = {}
 
         def record(
             name: str,
@@ -57,7 +57,7 @@ class PyPIScanner(BaseScanner):
             elif direct is False:
                 direct_flags.setdefault(name, False)
 
-            metadata = metadata_map.setdefault(name, {})
+            metadata: dict[str, Any] = metadata_map.setdefault(name, {})
             metadata["source"] = origins[name].name
             if scope:
                 if direct:
@@ -425,7 +425,7 @@ def _coerce_version_spec(value: object) -> str:
         if stripped.startswith("==") and len(stripped) > 2:
             return stripped[2:]
         return stripped or "*"
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return str(value)
     if isinstance(value, dict):
         for key in ("version", "specifier"):

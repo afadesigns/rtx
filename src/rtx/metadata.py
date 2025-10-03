@@ -11,7 +11,7 @@ import httpx
 
 from rtx import config
 from rtx.models import Dependency
-from rtx.utils import AsyncRetry
+from rtx.utils import AsyncRetry, utc_now
 
 ISO_FORMATS = [
     "%Y-%m-%dT%H:%M:%S.%f%z",
@@ -77,7 +77,7 @@ class ReleaseMetadata:
     def is_abandoned(self, threshold_days: int = 540) -> bool:
         if not self.latest_release:
             return False
-        return (datetime.utcnow() - self.latest_release).days > threshold_days
+        return (utc_now() - self.latest_release).days > threshold_days
 
     def has_suspicious_churn(self) -> bool:
         return self.releases_last_30d >= 5
@@ -110,7 +110,7 @@ class ReleaseMetadata:
     def days_since_latest(self, *, now: datetime | None = None) -> int | None:
         if not self.latest_release:
             return None
-        reference = now or datetime.utcnow()
+        reference = now or utc_now()
         delta = reference - self.latest_release
         return max(delta.days, 0)
 
@@ -216,7 +216,7 @@ class MetadataClient:
         releases = data.get("releases", {})
         last_release = None
         releases_last_30d = 0
-        now = datetime.utcnow()
+        now = utc_now()
         total = 0
         for _, files in releases.items():
             if not files:
@@ -307,7 +307,7 @@ class MetadataClient:
         last_release = None
         if isinstance(time_entries, dict):
             last_release = _parse_date(time_entries.get(dependency.version))
-        now = datetime.utcnow()
+        now = utc_now()
         releases_last_30d = 0
         total = 0
         if isinstance(time_entries, dict):
@@ -339,7 +339,7 @@ class MetadataClient:
         crate = data.get("crate", {})
         versions = data.get("versions", []) or []
         last_release = _parse_date(crate.get("updated_at"))
-        now = datetime.utcnow()
+        now = utc_now()
         releases_last_30d = 0
         total = len(versions)
         for version in versions:
@@ -372,7 +372,7 @@ class MetadataClient:
         if not versions:
             return ReleaseMetadata(None, 0, 0, [], dependency.ecosystem)
 
-        now = datetime.utcnow()
+        now = utc_now()
         versions_to_check = versions[-10:]
         semaphore = asyncio.Semaphore(
             min(config.GOMOD_METADATA_CONCURRENCY, len(versions_to_check))
@@ -425,7 +425,7 @@ class MetadataClient:
         entries = response.json()
         if not isinstance(entries, list):
             entries = []
-        now = datetime.utcnow()
+        now = utc_now()
         latest = None
         releases_last_30d = 0
         total = 0
@@ -482,7 +482,7 @@ class MetadataClient:
         docs = payload.get("response", {}).get("docs", [])
         if not isinstance(docs, list):
             docs = []
-        now = datetime.utcnow()
+        now = utc_now()
         latest = None
         releases_last_30d = 0
         total = 0
@@ -524,7 +524,7 @@ class MetadataClient:
         response.raise_for_status()
         data = response.json()
         items = data.get("items", []) if isinstance(data, dict) else []
-        now = datetime.utcnow()
+        now = utc_now()
         latest = None
         releases_last_30d = 0
         total = 0
@@ -574,7 +574,7 @@ class MetadataClient:
         packages = payload.get("package", {}).get("versions", {})
         if not isinstance(packages, dict):
             packages = {}
-        now = datetime.utcnow()
+        now = utc_now()
         latest = None
         releases_last_30d = 0
         total = 0
