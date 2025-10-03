@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rtx-trust"
-version = "0.1.0"
+version = "1.0.0"
 description = "Real Tracker X: cross-ecosystem dependency trust scanner"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,6 +31,7 @@ dependencies = [
     "packaging==24.1",
     "jinja2==3.1.6",
     "pyyaml>=6.0.2,<6.1",
+    "defusedxml>=0.7.1,<0.8",
     "tomli>=2.0.1; python_version < '3.11'",
 ]
 
@@ -86,6 +87,10 @@ python_version = "3.10"
 strict = true
 warn_unused_configs = true
 plugins = []
+
+[[tool.mypy.overrides]]
+module = ["defusedxml", "defusedxml.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"

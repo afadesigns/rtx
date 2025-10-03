@@ -45,6 +45,19 @@ pip install rtx-trust
   ```
   Always install pip-based dependencies after your conda packages to avoid solver conflicts.
 
+## Local validation
+Before opening a pull request, reproduce the CI checks inside an isolated environment (PEP 668 blocks system-wide installs on most distros):
+
+```bash
+uv sync  # or: python -m venv .venv && source .venv/bin/activate && pip install -e .[dev]
+uv run make lint
+uv run make typecheck
+uv run make test
+uv run make sbom
+```
+
+All commands avoid network access during tests unless explicitly enabled and fail fast on dependency drift or formatting issues.
+
 ## Quickstart
 ```bash
 rtx scan --format table

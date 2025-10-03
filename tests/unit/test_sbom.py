@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 
 from rtx import __version__
 from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity
 from rtx.sbom import generate_sbom, write_sbom
+from rtx.utils import utc_now
 
 
 def test_generate_sbom_contains_components(tmp_path: Path) -> None:
@@ -22,7 +22,7 @@ def test_generate_sbom_contains_components(tmp_path: Path) -> None:
         path=tmp_path,
         managers=["pypi"],
         findings=[finding],
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
     )
     sbom = generate_sbom(report)
     assert sbom["components"][0]["name"] == "requests"
@@ -43,7 +43,7 @@ def test_generate_sbom_includes_project_version_and_license(tmp_path: Path) -> N
         path=tmp_path,
         managers=["npm"],
         findings=[PackageFinding(dependency=dependency)],
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
     )
     sbom = generate_sbom(report)
     assert sbom["metadata"]["tools"][0]["version"] == __version__
@@ -76,7 +76,7 @@ def test_generate_sbom_merges_duplicate_components(tmp_path: Path) -> None:
         path=tmp_path,
         managers=["pypi"],
         findings=findings,
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
     )
     sbom = generate_sbom(report)
     assert len(sbom["components"]) == 1
@@ -127,7 +127,7 @@ def test_generate_sbom_merges_vulnerabilities(tmp_path: Path) -> None:
         path=tmp_path,
         managers=["pypi", "npm"],
         findings=findings,
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
     )
     sbom = generate_sbom(report)
     vulnerabilities = sbom["vulnerabilities"]
@@ -156,7 +156,7 @@ def test_write_sbom_creates_parent_directories(tmp_path: Path) -> None:
         path=tmp_path,
         managers=["pypi"],
         findings=[PackageFinding(dependency=dependency)],
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
     )
     destination = tmp_path / "reports" / "sbom.json"
     write_sbom(report, path=destination)
@@ -198,7 +198,7 @@ def test_generate_sbom_orders_outputs(tmp_path: Path) -> None:
         path=tmp_path,
         managers=["pypi"],
         findings=findings,
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
     )
 
     sbom = generate_sbom(report)

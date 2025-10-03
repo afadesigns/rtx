@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from rtx.models import Dependency
 from rtx.scanners import common
@@ -22,7 +22,7 @@ class NpmScanner(BaseScanner):
     def scan(self, root: Path) -> list[Dependency]:
         dependencies: dict[str, str] = {}
         origins: dict[str, Path] = {}
-        metadata_map: dict[str, dict[str, object]] = {}
+        metadata_map: dict[str, dict[str, Any]] = {}
         direct_flags: dict[str, bool] = {}
         direct_scopes: dict[str, str] = {}
 
@@ -42,7 +42,7 @@ class NpmScanner(BaseScanner):
             updated = common.merge_dependency_version(dependencies, name, normalized_version)
             if updated or name not in origins or prefer_source:
                 origins[name] = source
-            metadata = metadata_map.setdefault(name, {})
+            metadata: dict[str, Any] = metadata_map.setdefault(name, {})
             if direct is True:
                 direct_flags[name] = True
                 if scope:
@@ -140,10 +140,10 @@ class NpmScanner(BaseScanner):
         for name, version in sorted(dependencies.items()):
             manifest = origins.get(name, root)
             direct = direct_flags.get(name, False)
-            metadata = metadata_map.get(name, {})
-            scope = direct_scopes.get(name)
-            if scope:
-                metadata["scope"] = scope
+            metadata = metadata_map.setdefault(name, {})
+            active_scope = direct_scopes.get(name)
+            if active_scope:
+                metadata["scope"] = active_scope
             elif direct is False:
                 metadata.setdefault("scope", "transitive")
             metadata.setdefault("source", manifest.name)

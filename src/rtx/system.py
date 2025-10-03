@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from shutil import which
-from typing import Iterable
 
 
 @dataclass(slots=True)
@@ -25,6 +25,19 @@ class ToolStatus:
         }
 
 
+def _sanitize_version_args(flags: Iterable[str]) -> tuple[str, ...]:
+    sanitized: list[str] = []
+    for flag in flags:
+        if not flag.startswith("-"):
+            msg = f"unsafe version flag: {flag!r}"
+            raise ValueError(msg)
+        if any(ch in flag for ch in {" ", "\t", "\n", "\r", "|", "&", ";"}):
+            msg = f"unsafe characters in version flag: {flag!r}"
+            raise ValueError(msg)
+        sanitized.append(flag)
+    return tuple(sanitized)
+
+
 def _parse_version(result: subprocess.CompletedProcess[str]) -> str | None:
     output = (result.stdout or "").strip()
     if not output:
@@ -39,10 +52,15 @@ def probe_tool(
     if path is None:
         return ToolStatus(name=name, available=False)
 
-    args = [path]
-    args.extend(list(version_args or ["--version"]))
     try:
-        result = subprocess.run(
+        version_flags = _sanitize_version_args(version_args or ("--version",))
+    except ValueError as exc:
+        return ToolStatus(name=name, available=True, path=path, error=str(exc))
+
+    args = [path, *version_flags]
+    try:
+        # Bandit S603 flags subprocess usage; arguments are sanitized and path resolved.
+        result = subprocess.run(  # noqa: S603
             args,
             check=False,
             capture_output=True,

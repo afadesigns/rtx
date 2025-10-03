@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import ClassVar
 
 from rtx.models import Dependency
 from rtx.scanners import common
@@ -9,13 +9,13 @@ from rtx.scanners.base import BaseScanner
 
 
 class GoScanner(BaseScanner):
-    manager = "go"
-    manifests = ["go.mod", "go.sum"]
-    ecosystem = "go"
+    manager: ClassVar[str] = "go"
+    manifests: ClassVar[list[str]] = ["go.mod", "go.sum"]
+    ecosystem: ClassVar[str] = "go"
 
-    def scan(self, root: Path) -> List[Dependency]:
-        dependencies: Dict[str, str] = {}
-        origins: Dict[str, Path] = {}
+    def scan(self, root: Path) -> list[Dependency]:
+        dependencies: dict[str, str] = {}
+        origins: dict[str, Path] = {}
 
         go_mod = root / "go.mod"
         if go_mod.exists():

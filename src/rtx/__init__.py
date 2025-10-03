@@ -7,7 +7,7 @@ from pathlib import Path
 
 __all__ = ["__version__", "get_data_path"]
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 
 def get_data_path(resource: str) -> Path:

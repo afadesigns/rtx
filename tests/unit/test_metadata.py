@@ -9,6 +9,7 @@ import pytest
 
 from rtx.metadata import MetadataClient, ReleaseMetadata, _dedupe_names, _parse_date
 from rtx.models import Dependency
+from rtx.utils import utc_now
 
 httpx = pytest.importorskip("httpx")
 
@@ -51,7 +52,7 @@ def test_dedupe_names_preserves_order() -> None:
 
 
 def test_release_metadata_uses_slots() -> None:
-    metadata = ReleaseMetadata(datetime.utcnow(), 1, 2, ["alice"], "pypi")
+    metadata = ReleaseMetadata(utc_now(), 1, 2, ["alice"], "pypi")
     with pytest.raises(AttributeError):
         metadata.extra = "value"  # type: ignore[attr-defined]
 
@@ -98,7 +99,7 @@ async def test_fetch_caches_concurrent_requests(monkeypatch, tmp_path: Path) -> 
         nonlocal calls
         calls += 1
         return ReleaseMetadata(
-            latest_release=datetime.utcnow(),
+            latest_release=utc_now(),
             releases_last_30d=0,
             total_releases=1,
             maintainers=["alice"],
@@ -129,7 +130,7 @@ async def test_fetch_reuses_cache_for_same_package(monkeypatch, tmp_path: Path) 
         nonlocal calls
         calls += 1
         return ReleaseMetadata(
-            latest_release=datetime.utcnow(),
+            latest_release=utc_now(),
             releases_last_30d=0,
             total_releases=1,
             maintainers=["alice"],
@@ -154,7 +155,7 @@ async def test_fetch_reuses_cache_for_same_package(monkeypatch, tmp_path: Path) 
 @pytest.mark.asyncio
 async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
-    now = datetime.utcnow()
+    now = utc_now()
     older = now - timedelta(days=1)
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -205,7 +206,7 @@ async def test_fetch_gomod_tolerates_per_version_failures(
     monkeypatch, tmp_path: Path
 ) -> None:
     dependency = Dependency("go", "example.com/mod", "v1.0.0", True, tmp_path)
-    now = datetime.utcnow().replace(microsecond=0)
+    now = utc_now().replace(microsecond=0)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/@v/list"):
@@ -235,7 +236,7 @@ async def test_fetch_gomod_tolerates_per_version_failures(
 @pytest.mark.asyncio
 async def test_fetch_npm_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("npm", "demo", "1.0.0", True, tmp_path)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/demo"):
@@ -270,7 +271,7 @@ async def test_fetch_npm_parses_metadata(monkeypatch, tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_fetch_crates_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("crates", "demo", "1.0.0", True, tmp_path)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/demo"):
@@ -281,7 +282,7 @@ async def test_fetch_crates_parses_metadata(monkeypatch, tmp_path: Path) -> None
                         {"created_at": now},
                         {
                             "created_at": (
-                                datetime.utcnow() - timedelta(days=60)
+                                utc_now() - timedelta(days=60)
                             ).isoformat()
                         },
                     ],
@@ -308,7 +309,7 @@ async def test_fetch_crates_parses_metadata(monkeypatch, tmp_path: Path) -> None
 @pytest.mark.asyncio
 async def test_fetch_gomod_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("go", "example.com/demo", "1.0.0", True, tmp_path)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
     requested = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -320,7 +321,7 @@ async def test_fetch_gomod_parses_metadata(monkeypatch, tmp_path: Path) -> None:
             return json_response({"Time": now})
         if path.endswith("v1.0.0.info"):
             return json_response(
-                {"Time": (datetime.utcnow() - timedelta(days=40)).isoformat()}
+                {"Time": (utc_now() - timedelta(days=40)).isoformat()}
             )
         return httpx.Response(404)
 
@@ -359,7 +360,7 @@ async def test_fetch_gomod_respects_concurrency(monkeypatch, tmp_path: Path) -> 
             max_active = max(max_active, active)
         try:
             await asyncio.sleep(0.01)
-            return json_response({"Time": datetime.utcnow().isoformat()})
+            return json_response({"Time": utc_now().isoformat()})
         finally:
             async with lock:
                 active -= 1
@@ -381,7 +382,7 @@ async def test_fetch_gomod_respects_concurrency(monkeypatch, tmp_path: Path) -> 
 @pytest.mark.asyncio
 async def test_fetch_rubygems_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("rubygems", "demo", "1.0.0", True, tmp_path)
-    now = datetime.utcnow()
+    now = utc_now()
 
     async def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -414,7 +415,7 @@ async def test_fetch_rubygems_parses_metadata(monkeypatch, tmp_path: Path) -> No
 @pytest.mark.asyncio
 async def test_fetch_maven_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("maven", "org.demo:demo", "1.0.0", True, tmp_path)
-    now = datetime.utcnow()
+    now = utc_now()
     recent = int(now.timestamp() * 1000)
     older = int((now - timedelta(days=60)).timestamp() * 1000)
 
@@ -451,7 +452,7 @@ async def test_fetch_maven_parses_metadata(monkeypatch, tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_fetch_nuget_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("nuget", "Demo.Package", "1.0.0", True, tmp_path)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.nuget.org":
@@ -469,7 +470,7 @@ async def test_fetch_nuget_parses_metadata(monkeypatch, tmp_path: Path) -> None:
                                 {
                                     "catalogEntry": {
                                         "published": (
-                                            datetime.utcnow() - timedelta(days=45)
+                                            utc_now() - timedelta(days=45)
                                         ).isoformat(),
                                         "authors": "alice",
                                     }
@@ -499,7 +500,7 @@ async def test_fetch_nuget_parses_metadata(monkeypatch, tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_fetch_packagist_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("packagist", "vendor/demo", "1.0.0", True, tmp_path)
-    now = datetime.utcnow().isoformat()
+    now = utc_now().isoformat()
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "repo.packagist.org":
@@ -513,7 +514,7 @@ async def test_fetch_packagist_parses_metadata(monkeypatch, tmp_path: Path) -> N
                             },
                             "0.9.0": {
                                 "time": (
-                                    datetime.utcnow() - timedelta(days=90)
+                                    utc_now() - timedelta(days=90)
                                 ).isoformat(),
                                 "authors": [{"name": "alice"}, {"name": "Bob"}],
                             },

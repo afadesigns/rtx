@@ -9,6 +9,7 @@ import pytest
 from rtx.metadata import ReleaseMetadata
 from rtx.models import Advisory, Dependency, Severity
 from rtx.policy import TrustPolicyEngine, levenshtein
+from rtx.utils import utc_now
 
 FetchFn = Callable[[Dependency], Awaitable[ReleaseMetadata]]
 
@@ -35,7 +36,7 @@ def make_metadata(
     maintainers: list[str] | None = None,
 ) -> ReleaseMetadata:
     return ReleaseMetadata(
-        latest_release=latest_release or datetime.utcnow(),
+        latest_release=latest_release or utc_now(),
         releases_last_30d=releases_last_30d,
         total_releases=total_releases,
         maintainers=list(maintainers) if maintainers is not None else ["alice"],

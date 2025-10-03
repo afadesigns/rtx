@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import ClassVar
 
 from rtx.models import Dependency
 from rtx.scanners import common
@@ -9,13 +9,13 @@ from rtx.scanners.base import BaseScanner
 
 
 class MavenScanner(BaseScanner):
-    manager = "maven"
-    manifests = ["pom.xml", "build.gradle", "build.gradle.kts"]
-    ecosystem = "maven"
+    manager: ClassVar[str] = "maven"
+    manifests: ClassVar[list[str]] = ["pom.xml", "build.gradle", "build.gradle.kts"]
+    ecosystem: ClassVar[str] = "maven"
 
-    def scan(self, root: Path) -> List[Dependency]:
-        dependencies: Dict[str, str] = {}
-        origins: Dict[str, Path] = {}
+    def scan(self, root: Path) -> list[Dependency]:
+        dependencies: dict[str, str] = {}
+        origins: dict[str, Path] = {}
 
         pom = root / "pom.xml"
         if pom.exists():

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from io import StringIO
 from pathlib import Path
 
@@ -18,6 +17,7 @@ from rtx.models import (
     TrustSignal,
 )
 from rtx.reporting import render, render_json, render_table
+from rtx.utils import utc_now
 
 
 def test_render_table_includes_signal_details() -> None:
@@ -45,7 +45,7 @@ def test_render_table_includes_signal_details() -> None:
         path=Path("."),
         managers=["pypi"],
         findings=[finding],
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
         stats={"dependency_count": 1},
     )
 
@@ -98,7 +98,7 @@ def _sample_report() -> Report:
         path=Path("."),
         managers=["pypi"],
         findings=[finding],
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
         stats={
             "dependency_count": 1,
             "direct_dependencies": 1,
@@ -153,7 +153,7 @@ def test_report_summary_includes_dependency_breakdown() -> None:
         path=Path("."),
         managers=["pypi", "npm"],
         findings=findings,
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
         stats={
             "dependency_count": 2,
             "direct_dependencies": 1,

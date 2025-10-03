@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,7 @@ from rtx.models import (
     TrustSignal,
 )
 from rtx.system import ToolStatus
+from rtx.utils import utc_now
 
 
 def test_resolve_output_path_table_defaults(tmp_path: Path) -> None:
@@ -86,7 +86,7 @@ def _sample_report(exit_code: int = 0) -> Report:
         path=Path("."),
         managers=["pypi"],
         findings=findings,
-        generated_at=datetime.utcnow(),
+        generated_at=utc_now(),
         stats={
             "dependency_count": len(findings),
             "direct_dependencies": len([f for f in findings if f.dependency.direct]),
