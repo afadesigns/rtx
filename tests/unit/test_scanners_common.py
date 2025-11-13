@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from rtx.scanners.common import _parse_conda_dependency, _parse_requirement_line
+from rtx.scanners.common import (
+    _parse_conda_dependency,
+    _parse_requirement_line,
+    merge_dependency_version,
+)
 
 
 @pytest.mark.parametrize(
@@ -39,3 +43,16 @@ def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> 
 )
 def test_parse_conda_dependency(line: str, expected: tuple[str, str] | None) -> None:
     assert _parse_conda_dependency(line) == expected
+
+
+def test_merge_dependency_version() -> None:
+    store: dict[str, str] = {}
+    assert merge_dependency_version(store, "name", "1.2.3") is True
+    assert store["name"] == "1.2.3"
+    assert merge_dependency_version(store, "name", "1.2.3") is False
+    assert merge_dependency_version(store, "name", "*") is False
+    assert store["name"] == "1.2.3"
+    assert merge_dependency_version(store, "name", ">=1.2.3") is False
+    assert store["name"] == "1.2.3"
+    assert merge_dependency_version(store, "name", "@ https://example.com/pkg.zip") is True
+    assert store["name"] == "@ https://example.com/pkg.zip"
