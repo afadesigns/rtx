@@ -11,6 +11,7 @@ from rtx.scanners.common import (
     _normalize_specifier,
     _parse_conda_dependency,
     _parse_requirement_line,
+    _parse_pnpm_package_key,
     load_json_dependencies,
     load_lock_dependencies,
     merge_dependency_version,
@@ -695,6 +696,11 @@ def test_read_pnpm_lock(tmp_path: Path) -> None:
     )
     dependencies = read_pnpm_lock(pnpm_lock)
     assert dependencies == {}
+def test__parse_pnpm_package_key(tmp_path: Path) -> None:
+    # Test case for non-string key
+    name, version = _parse_pnpm_package_key(123)
+    assert name is None
+    assert version is None
 def test_read_cargo_lock(tmp_path: Path) -> None:
     cargo_lock = tmp_path / "Cargo.lock"
     cargo_lock.write_text(
