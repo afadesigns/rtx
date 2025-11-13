@@ -7,6 +7,7 @@ import pytest
 from rtx.scanners.common import (
     _clean_pnpm_version,
     _parse_conda_dependency,
+    _parse_npm_token,
     _parse_pnpm_package_key,
     _parse_requirement_line,
     merge_dependency_version,
