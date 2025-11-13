@@ -13,6 +13,7 @@ from rtx.scanners.common import (
     _parse_pnpm_package_key,
     _parse_requirement_line,
     _pip_install_start,
+    _specificity_rank,
     merge_dependency_version,
     read_brewfile,
     read_cargo_lock,
@@ -397,3 +398,22 @@ def test_pip_npm_install_start(tokens: list[str], expected: int | None) -> None:
 )
 def test_extract_include_directives(tokens: list[str], expected: list[tuple[str, str]]) -> None:
     assert _extract_include_directives(tokens) == expected
+
+
+@pytest.mark.parametrize(
+    ("specifier", "expected_rank"),
+    [
+        ("", 0),
+        ("*", 0),
+        ("@url", 5),
+        ("==1.2.3", 4),
+        (">1.0.0", 2),
+        ("<2.0.0", 2),
+        ("~1.0.0", 2),
+        ("!1.0.0", 2),
+        ("1.2.3", 4),
+        ("   ", 0),
+    ],
+)
+def test_specificity_rank(specifier: str, expected_rank: int) -> None:
+    assert _specificity_rank(specifier) == expected_rank
