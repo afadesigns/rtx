@@ -493,11 +493,11 @@ def test_read_dockerfile_npm_flags_with_args(tmp_path: Path) -> None:
     dockerfile.write_text(
         """
         FROM node:16
-        RUN npm install --prefix /app name@1.0.0 --registry https://registry.npmjs.org/ other@2.0.0
+        RUN npm install --prefix /app name@1.0.0 --registry https://registry.npmjs.org/ other@2.0.0 another
         """
     )
     dependencies = read_dockerfile(dockerfile)
-    assert dependencies == {"npm:name": "1.0.0", "npm:other": "2.0.0"}
+    assert dependencies == {"npm:name": "1.0.0", "npm:other": "2.0.0", "npm:another": "*"}
 
 
 def test_read_dockerfile_npm_parsed_none(tmp_path: Path) -> None:
