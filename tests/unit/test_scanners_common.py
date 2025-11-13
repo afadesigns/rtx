@@ -9,6 +9,7 @@ from rtx.scanners.common import (
     _extract_include_directives,
     _npm_install_start,
     _parse_conda_dependency,
+    _parse_npm_token,
     _parse_pnpm_package_key,
     _parse_requirement_line,
     _pip_install_start,
@@ -272,6 +273,82 @@ def test_load_lock_dependencies(tmp_path: Path) -> None:
 )
 def test_normalize_lock_name(name: str, expected: str) -> None:
     assert _normalize_lock_name(name) == expected
+
+
+def test_read_poetry_lock(tmp_path: Path) -> None:
+    # Test case for a poetry.lock file with valid packages
+    (tmp_path / "poetry.lock").write_text(
+        '''
+        [[package]]
+        name = "name"
+        version = "1.2.3"
+
+        [[package]]
+        name = "other"
+        version = "4.5.6"
+        '''
+    )
+    assert read_poetry_lock(tmp_path / "poetry.lock") == {"name": "1.2.3", "other": "4.5.6"}
+
+    # Test case for a poetry.lock file with an empty [[package]] section
+    (tmp_path / "empty_poetry.lock").write_text(
+        '''
+        # Empty lock file
+        '''
+    )
+    assert read_poetry_lock(tmp_path / "empty_poetry.lock") == {}
+
+    # Test case for a poetry.lock file where package is not a dictionary
+    (tmp_path / "invalid_package.lock").write_text(
+        '''
+        [[package]]
+        "just_a_string"
+        '''
+    )
+    assert read_poetry_lock(tmp_path / "invalid_package.lock") == {}
+
+    # Test case for a poetry.lock file where name or version are not strings
+    (tmp_path / "invalid_name_version.lock").write_text(
+        '''
+        [[package]]
+        name = 123
+        version = 4.5
+        '''
+    )
+    assert read_poetry_lock(tmp_path / "invalid_name_version.lock") == {}
+
+
+def test_read_uv_lock_initial_parsing(tmp_path: Path) -> None:
+    # Test case for a uv.lock file where the "package" key contains a single dictionary
+    (tmp_path / "single_package.lock").write_text(
+        '''
+        version = 1
+
+        [[package]]
+        name = "single-name"
+        version = "1.0.0"
+        '''
+    )
+    assert read_uv_lock(tmp_path / "single_package.lock") == {"single-name": "1.0.0"}
+
+    # Test case for a uv.lock file where the "package" list contains a non-dictionary item
+    (tmp_path / "non_dict_package.lock").write_text(
+        '''
+        version = 1
+
+        [[package]]
+        name = "name1"
+        version = "1.0.0"
+
+        [[package]]
+        "just_a_string"
+
+        [[package]]
+        name = "name2"
+        version = "2.0.0"
+        '''
+    )
+    assert read_uv_lock(tmp_path / "non_dict_package.lock") == {}
 
 
 def test_read_requirements(tmp_path: Path) -> None:

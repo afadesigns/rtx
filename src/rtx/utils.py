@@ -96,8 +96,8 @@ def read_yaml(path: Path) -> Any:
 def read_toml(path: Path) -> Any:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
-    except (tomllib.TOMLDecodeError, ValueError) as exc:  # pragma: no cover
-        raise ValueError(f"Invalid TOML in {path}") from exc
+    except (tomllib.TOMLDecodeError, ValueError):
+        return {}
 
 
 def detect_files(root: Path, patterns: Sequence[str]) -> list[Path]:
