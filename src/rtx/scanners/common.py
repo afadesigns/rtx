@@ -310,36 +310,44 @@ def read_uv_lock(path: Path) -> dict[str, str]:
 def _parse_pnpm_package_key(key: str) -> tuple[str | None, str | None]:
     if not isinstance(key, str):
         return None, None
+
+    # Remove leading '/' and 'node_modules/'
     trimmed = key.lstrip("/")
+    if trimmed.startswith("node_modules/"):
+        trimmed = trimmed[len("node_modules/"):]
+
     if not trimmed:
         return None, None
+
     base = trimmed.split("(", 1)[0]
-    name: str | None
-    version: str | None
-    if "/" in base and "@" not in base:
+    name: str | None = None
+    version: str | None = None
+
+    if base.startswith("@"):
+        # Scoped package: @scope/name/version or @scope/name@version
         parts = base.split("/")
-        if base.startswith("@"):
-            if len(parts) > 1:
-                name = f"{parts[0]}/{parts[1]}"
-                version = parts[2] if len(parts) > 2 else None
-            else:
-                name = base
-                version = None
+        if len(parts) > 1:
+            name = f"{parts[0]}/{parts[1]}"
+            if len(parts) > 2:
+                version = parts[2]
+            elif "@" in parts[1]: # Handle @scope/name@version
+                scope_name, ver = parts[1].split("@", 1)
+                name = f"{parts[0]}/{scope_name}"
+                version = ver
         else:
-            name = parts[0]
-            version = parts[1] if len(parts) > 1 else None
-    elif base.startswith("@"):
-        index = base.rfind("@")
-        if index <= 0:
-            return None, None
-        name = base[:index]
-        version = base[index + 1 :]
+            name = base
+    elif "@" in base:
+        # Non-scoped package with @version: name@version
+        name, version = base.split("@", 1)
+    elif "/" in base:
+        # Non-scoped package with /version: name/version
+        parts = base.split("/")
+        name = parts[0]
+        version = parts[1] if len(parts) > 1 else None
     else:
-        if "@" not in base:
-            return base or None, None
-        name_part, version_part = base.split("@", 1)
-        name = name_part
-        version = version_part
+        # Just a name
+        name = base
+
     cleaned_name = name.strip() if name else None
     cleaned_version = version.strip() if version else None
     return (cleaned_name or None, cleaned_version or None)

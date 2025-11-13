@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from rtx.scanners.common import (
+    _clean_pnpm_version,
     _parse_conda_dependency,
+    _parse_pnpm_package_key,
     _parse_requirement_line,
     merge_dependency_version,
     read_brewfile,
@@ -292,3 +294,55 @@ def test_read_pnpm_lock(tmp_path: Path) -> None:
     )
     dependencies = read_pnpm_lock(pnpm_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+
+@pytest.mark.parametrize(
+    ("key", "expected_name", "expected_version"),
+    [
+        ("", None, None),
+        ("/name/1.2.3", "name", "1.2.3"),
+        ("/@scope/name/1.2.3", "@scope/name", "1.2.3"),
+        ("name@1.2.3", "name", "1.2.3"),
+        ("@scope/name@1.2.3", "@scope/name", "1.2.3"),
+        ("node_modules/name", "name", None),
+        ("node_modules/@scope/name", "@scope/name", None),
+        ("name", "name", None),
+        ("@scope/name", "@scope/name", None),
+        ("/name", "name", None),
+        ("/@scope/name", "@scope/name", None),
+        ("name/1.2.3", "name", "1.2.3"),
+        ("@scope/name/1.2.3", "@scope/name", "1.2.3"),
+        # Additional cases for robustness
+        ("name@^1.0.0", "name", "^1.0.0"),
+        ("@scope/name@~1.0.0", "@scope/name", "~1.0.0"),
+        ("name@latest", "name", "latest"),
+        ("/name", "name", None),
+        ("/@scope/name", "@scope/name", None),
+        ("node_modules/name/1.2.3", "name", "1.2.3"),
+        ("node_modules/@scope/name/1.2.3", "@scope/name", "1.2.3"),
+    ],
+)
+def test_parse_pnpm_package_key(key: str, expected_name: str | None, expected_version: str | None) -> None:
+    name, version = _parse_pnpm_package_key(key)
+    assert name == expected_name
+    assert version == expected_version
+
+
+@pytest.mark.parametrize(
+    ("raw_version", "expected_version"),
+    [
+        (None, None),
+        ("", None),
+        ("1.2.3", "1.2.3"),
+        ("1.2.3 (some-hash)", "1.2.3"),
+        ("link:../foo", None),
+        ("workspace:^1.0.0", None),
+        ("file:../foo.tgz", None),
+        ("github:user/repo", None),
+        ("git+ssh://git@github.com/user/repo.git", None),
+        ("npm:name@1.2.3", "1.2.3"),
+        ("npm:@scope/name@1.2.3", "1.2.3"),
+    ],
+)
+def test_clean_pnpm_version(raw_version: str | None, expected_version: str | None) -> None:
+    assert _clean_pnpm_version(raw_version) == expected_version
