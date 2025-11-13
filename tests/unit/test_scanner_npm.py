@@ -24,8 +24,7 @@ def test_npm_scanner_reads_pnpm_lock(tmp_path: Path) -> None:
 
               /react/18.2.0:
                 resolution: {
-                    integrity: >
-                        sha512-6O2acGY1YLSsmdlL1BcLqrNfbSbEffjIzjOBqAZFt4+TRXMDR9E1fCaeOCfCUDKTgoOFJdvrPaBJayEagAA7oA==
+                integrity: sha512-6O2acGY1YLSsmdlL1BcLqrNfbSbEffjIzjOBqAZFt4+TRXMDR9E1fCaeOCfCUDKTgoOFJdvrPaBJayEagAA7oA==
                 }
                 engines: {node: '>=0.10.0'}
                 dev: false
