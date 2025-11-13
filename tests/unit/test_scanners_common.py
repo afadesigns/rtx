@@ -584,6 +584,10 @@ def test_read_requirements(tmp_path: Path) -> None:
 name==1.0.0""")
     assert read_requirements(tmp_path / "non_existent_include.txt") == {"name": "1.0.0"}
 
+    # Test case for invalid package name
+    (tmp_path / "invalid_package.txt").write_text("invalid-package-name>")
+    assert read_requirements(tmp_path / "invalid_package.txt") == {}
+
 
 def test_read_go_mod_single_require(tmp_path: Path) -> None:
     go_mod = tmp_path / "go.mod"
