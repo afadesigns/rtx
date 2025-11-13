@@ -621,6 +621,19 @@ def test_read_gemfile_lock(tmp_path: Path) -> None:
     dependencies = read_gemfile_lock(gemfile_lock_space)
     assert dependencies == {"name": "1.2.3"}
 
+    # Test case for line without version
+    gemfile_lock_no_version = tmp_path / "Gemfile.lock_no_version"
+    gemfile_lock_no_version.write_text(
+        """
+        GEM
+          remote: https://rubygems.org/
+          specs:
+            name
+        """
+    )
+    dependencies = read_gemfile_lock(gemfile_lock_no_version)
+    assert dependencies == {}
+
 
 def test_read_pnpm_lock(tmp_path: Path) -> None:
     pnpm_lock = tmp_path / "pnpm-lock.yaml"
