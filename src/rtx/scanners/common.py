@@ -187,9 +187,8 @@ def load_lock_dependencies(path: Path) -> dict[str, str]:
     data = read_json(path)
     if isinstance(data, dict) and "packages" in data:
         return {
-            _normalize_lock_name(name): str(meta.get("version", "0.0.0"))
+            _normalize_lock_name(name): str(meta.get("version", "0.0.0")) if isinstance(meta, dict) else "0.0.0"
             for name, meta in data["packages"].items()
-            if isinstance(meta, dict)
         }
     if isinstance(data, dict) and "dependencies" in data:
         out: dict[str, str] = {}
@@ -209,7 +208,10 @@ def _normalize_lock_name(name: str) -> str:
 
 
 def read_poetry_lock(path: Path) -> dict[str, str]:
-    content = read_toml(path)
+    try:
+        content = read_toml(path)
+    except ValueError:
+        return {}
     out: dict[str, str] = {}
     for package in content.get("package", []):
         if isinstance(package, dict):
@@ -221,29 +223,39 @@ def read_poetry_lock(path: Path) -> dict[str, str]:
 
 
 def read_uv_lock(path: Path) -> dict[str, str]:
-    data = read_toml(path)
+    try:
+        data = read_toml(path)
+    except ValueError:
+        return {}
     packages = data.get("package", [])
     if isinstance(packages, dict):
         packages = [packages]
 
     catalog: dict[str, dict[str, object]] = {}
     for package in packages:
-        if isinstance(package, dict):
+        try:
+            if not isinstance(package, dict):
+                continue
             name = package.get("name")
             if isinstance(name, str):
                 catalog[name] = package
+        except ValueError:
+            continue
 
     direct_names: set[str] = set()
     for package in packages:
-        if not isinstance(package, dict):
+        try:
+            if not isinstance(package, dict):
+                continue
+            source = package.get("source")
+            if isinstance(source, dict) and source.get("virtual") == ".":
+                for entry in package.get("dependencies", []) or []:
+                    if isinstance(entry, dict):
+                        dep_name = entry.get("name")
+                        if isinstance(dep_name, str):
+                            direct_names.add(dep_name)
+        except ValueError:
             continue
-        source = package.get("source")
-        if isinstance(source, dict) and source.get("virtual") == ".":
-            for entry in package.get("dependencies", []) or []:
-                if isinstance(entry, dict):
-                    dep_name = entry.get("name")
-                    if isinstance(dep_name, str):
-                        direct_names.add(dep_name)
 
     if not direct_names:
         project = data.get("project")
@@ -269,27 +281,27 @@ def read_uv_lock(path: Path) -> dict[str, str]:
                             direct_names.add(req.name)
 
     results: dict[str, str] = {}
-    for name in sorted(direct_names):
-        version = "*"
-        package = catalog.get(name)
-        if isinstance(package, dict):
-            extracted = package.get("version")
-            if isinstance(extracted, str) and extracted:
-                version = extracted
-            else:
-                metadata = package.get("metadata")
-                if isinstance(metadata, dict):
-                    requires_dist = metadata.get("requires-dist")
-                    if isinstance(requires_dist, list):
-                        for item in requires_dist:
-                            if isinstance(item, dict) and item.get("name") == name:
-                                spec = item.get("specifier")
-                                if isinstance(spec, str) and spec:
-                                    version = spec
-                                break
-        results[name] = version
-
-    if not results:
+    if direct_names:
+        for name in sorted(direct_names):
+            version = "*"
+            package = catalog.get(name)
+            if isinstance(package, dict):
+                extracted = package.get("version")
+                if isinstance(extracted, str) and extracted:
+                    version = extracted
+                else:
+                    metadata = package.get("metadata")
+                    if isinstance(metadata, dict):
+                        requires_dist = metadata.get("requires-dist")
+                        if isinstance(requires_dist, list):
+                            for item in requires_dist:
+                                if isinstance(item, dict) and item.get("name") == name:
+                                    spec = item.get("specifier")
+                                    if isinstance(spec, str) and spec:
+                                        version = spec
+                                    break
+            results[name] = version
+    else:
         for name, package in catalog.items():
             if not isinstance(package, dict):
                 continue
@@ -475,7 +487,7 @@ def read_requirements(
         try:
             tokens = shlex.split(cleaned) if cleaned else []
         except ValueError:
-            tokens = []
+            continue
 
         directives = _extract_include_directives(tokens)
         if directives:
