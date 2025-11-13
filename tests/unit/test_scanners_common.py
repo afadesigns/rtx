@@ -17,6 +17,7 @@ from rtx.scanners.common import (
     read_go_mod,
     read_maven_pom,
     read_packages_lock,
+    read_poetry_lock,
     read_requirements,
 )
 
@@ -236,4 +237,20 @@ def test_read_packages_lock(tmp_path: Path) -> None:
         """
     )
     dependencies = read_packages_lock(packages_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+
+def test_read_poetry_lock(tmp_path: Path) -> None:
+    poetry_lock = tmp_path / "poetry.lock"
+    poetry_lock.write_text(
+        """
+        [[package]]
+        name = "name"
+        version = "1.2.3"
+        [[package]]
+        name = "other"
+        version = "4.5.6"
+        """
+    )
+    dependencies = read_poetry_lock(poetry_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
