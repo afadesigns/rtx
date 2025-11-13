@@ -567,3 +567,18 @@ def test_read_requirements(tmp_path: Path) -> None:
     (tmp_path / "non_existent_include.txt").write_text("""-r non_existent.txt
 name==1.0.0""")
     assert read_requirements(tmp_path / "non_existent_include.txt") == {"name": "1.0.0"}
+
+def test_read_go_mod_single_require(tmp_path: Path) -> None:
+    go_mod = tmp_path / "go.mod"
+    go_mod.write_text(
+        """
+        module example.com/my/module
+        go 1.18
+        require example.com/other/module v1.2.3
+        """
+    )
+    dependencies = read_go_mod(go_mod)
+    assert dependencies == {
+        "example.com/other/module": "v1.2.3",
+    }
+
