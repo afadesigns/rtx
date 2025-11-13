@@ -19,6 +19,7 @@ from rtx.scanners.common import (
     read_packages_lock,
     read_poetry_lock,
     read_requirements,
+    read_uv_lock,
 )
 
 
@@ -253,4 +254,23 @@ def test_read_poetry_lock(tmp_path: Path) -> None:
         """
     )
     dependencies = read_poetry_lock(poetry_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+
+def test_read_uv_lock(tmp_path: Path) -> None:
+    uv_lock = tmp_path / "uv.lock"
+    uv_lock.write_text(
+        """
+        version = 1
+
+        [[package]]
+        name = "name"
+        version = "1.2.3"
+
+        [[package]]
+        name = "other"
+        version = "4.5.6"
+        """
+    )
+    dependencies = read_uv_lock(uv_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
