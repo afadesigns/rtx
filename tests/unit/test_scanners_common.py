@@ -5,31 +5,19 @@ from pathlib import Path
 import pytest
 
 from rtx.scanners.common import (
-    _clean_pnpm_version,
     _extract_include_directives,
-    _npm_install_start,
-    _parse_conda_dependency,
-    _parse_npm_token,
-    _parse_pnpm_package_key,
-    _parse_requirement_line,
-    _pip_install_start,
-    _specificity_rank,
     _is_more_specific,
+    _normalize_lock_name,
     _normalize_specifier,
-    merge_dependency_version,
-    normalize_version,
+    _parse_conda_dependency,
+    _parse_requirement_line,
     load_json_dependencies,
     load_lock_dependencies,
-    _normalize_lock_name,
-    read_brewfile,
-    read_cargo_lock,
-    read_composer_lock,
+    merge_dependency_version,
+    normalize_version,
     read_dockerfile,
-    read_environment_yml,
     read_gemfile_lock,
     read_go_mod,
-    read_maven_pom,
-    read_packages_lock,
     read_pnpm_lock,
     read_poetry_lock,
     read_requirements,
@@ -108,7 +96,7 @@ def test_merge_dependency_version() -> None:
     assert merge_dependency_version(store, "name", "*") is False
     assert store["name"] == "1.0.0"
 
-    # New test case: candidate is more specific than existing (e.g., existing >1.0.0, candidate ==2.0.0)
+    # New test case: candidate is more specific than existing (>1.0.0 vs ==2.0.0)
     store = {"name": ">1.0.0"}
     assert merge_dependency_version(store, "name", "==2.0.0") is True
     assert store["name"] == "==2.0.0"
@@ -186,79 +174,79 @@ def test_load_json_dependencies(tmp_path: Path) -> None:
 def test_load_lock_dependencies(tmp_path: Path) -> None:
     # Test case for a lock file with "packages" key and valid metadata
     (tmp_path / "lock1.json").write_text(
-        '''
+        """
         {
             "packages": {
                 "name": {"version": "1.2.3"},
                 "other": {"version": "4.5.6"}
             }
         }
-        '''
+        """
     )
     assert load_lock_dependencies(tmp_path / "lock1.json") == {"name": "1.2.3", "other": "4.5.6"}
 
     # Test case for a lock file with "packages" key but empty
     (tmp_path / "lock2.json").write_text(
-        '''
+        """
         {
             "packages": {}
         }
-        '''
+        """
     )
     assert load_lock_dependencies(tmp_path / "lock2.json") == {}
 
     # Test case for a lock file with "packages" key but non-dict metadata
     (tmp_path / "lock3.json").write_text(
-        '''
+        """
         {
             "packages": {
                 "name": "1.2.3"
             }
         }
-        '''
+        """
     )
     assert load_lock_dependencies(tmp_path / "lock3.json") == {"name": "0.0.0"}
 
     # Test case for a lock file with "dependencies" key and valid metadata
     (tmp_path / "lock4.json").write_text(
-        '''
+        """
         {
             "dependencies": {
                 "name": {"version": "1.2.3"},
                 "other": {"version": "4.5.6"}
             }
         }
-        '''
+        """
     )
     assert load_lock_dependencies(tmp_path / "lock4.json") == {"name": "1.2.3", "other": "4.5.6"}
 
     # Test case for a lock file with "dependencies" key but empty
     (tmp_path / "lock5.json").write_text(
-        '''
+        """
         {
             "dependencies": {}
         }
-        '''
+        """
     )
     assert load_lock_dependencies(tmp_path / "lock5.json") == {}
 
     # Test case for a lock file with "dependencies" key but non-dict metadata
     (tmp_path / "lock6.json").write_text(
-        '''
+        """
         {
             "dependencies": {
                 "name": "1.2.3"
             }
         }
-        '''
+        """
     )
     assert load_lock_dependencies(tmp_path / "lock6.json") == {}
 
     # Test case for a lock file that is not a dictionary (e.g., a JSON array)
-    (tmp_path / "lock7.json").write_text('[1, 2, 3]')
+    (tmp_path / "lock7.json").write_text("[1, 2, 3]")
     assert load_lock_dependencies(tmp_path / "lock7.json") == {}
 
-    # Test case for a lock file that is a dictionary but contains neither "packages" nor "dependencies" keys
+    # Test case for a dictionary lock file without "packages" or "dependencies" keys
     (tmp_path / "lock8.json").write_text('{"foo": "bar"}')
     assert load_lock_dependencies(tmp_path / "lock8.json") == {}
 
@@ -279,7 +267,7 @@ def test_normalize_lock_name(name: str, expected: str) -> None:
 def test_read_poetry_lock(tmp_path: Path) -> None:
     # Test case for a poetry.lock file with valid packages
     (tmp_path / "poetry.lock").write_text(
-        '''
+        """
         [[package]]
         name = "name"
         version = "1.2.3"
@@ -287,34 +275,34 @@ def test_read_poetry_lock(tmp_path: Path) -> None:
         [[package]]
         name = "other"
         version = "4.5.6"
-        '''
+        """
     )
     assert read_poetry_lock(tmp_path / "poetry.lock") == {"name": "1.2.3", "other": "4.5.6"}
 
     # Test case for a poetry.lock file with an empty [[package]] section
     (tmp_path / "empty_poetry.lock").write_text(
-        '''
+        """
         # Empty lock file
-        '''
+        """
     )
     assert read_poetry_lock(tmp_path / "empty_poetry.lock") == {}
 
     # Test case for a poetry.lock file where package is not a dictionary
     (tmp_path / "invalid_package.lock").write_text(
-        '''
+        """
         [[package]]
         "just_a_string"
-        '''
+        """
     )
     assert read_poetry_lock(tmp_path / "invalid_package.lock") == {}
 
     # Test case for a poetry.lock file where name or version are not strings
     (tmp_path / "invalid_name_version.lock").write_text(
-        '''
+        """
         [[package]]
         name = 123
         version = 4.5
-        '''
+        """
     )
     assert read_poetry_lock(tmp_path / "invalid_name_version.lock") == {}
 
@@ -322,19 +310,19 @@ def test_read_poetry_lock(tmp_path: Path) -> None:
 def test_read_uv_lock_initial_parsing(tmp_path: Path) -> None:
     # Test case for a uv.lock file where the "package" key contains a single dictionary
     (tmp_path / "single_package.lock").write_text(
-        '''
+        """
         version = 1
 
         [[package]]
         name = "single-name"
         version = "1.0.0"
-        '''
+        """
     )
     assert read_uv_lock(tmp_path / "single_package.lock") == {"single-name": "1.0.0"}
 
     # Test case for a uv.lock file where the "package" list contains a non-dictionary item
     (tmp_path / "non_dict_package.lock").write_text(
-        '''
+        """
         version = 1
 
         [[package]]
@@ -347,7 +335,7 @@ def test_read_uv_lock_initial_parsing(tmp_path: Path) -> None:
         [[package]]
         name = "name2"
         version = "2.0.0"
-        '''
+        """
     )
     assert read_uv_lock(tmp_path / "non_dict_package.lock") == {}
 
@@ -355,7 +343,7 @@ def test_read_uv_lock_initial_parsing(tmp_path: Path) -> None:
 def test_read_uv_lock_direct_names_virtual_source(tmp_path: Path) -> None:
     # Test case for direct_names population when source.get("virtual") == "."
     (tmp_path / "virtual_source.lock").write_text(
-        '''
+        """
         version = 1
 
         [[package]]
@@ -367,7 +355,7 @@ def test_read_uv_lock_direct_names_virtual_source(tmp_path: Path) -> None:
         [[package]]
         name = "dep2"
         version = "2.0.0"
-        '''
+        """
     )
     assert read_uv_lock(tmp_path / "virtual_source.lock") == {"transitive-dep": "1.0.0"}
 
@@ -375,7 +363,7 @@ def test_read_uv_lock_direct_names_virtual_source(tmp_path: Path) -> None:
 def test_read_uv_lock_direct_names_project_dependencies(tmp_path: Path) -> None:
     # Test case for direct_names population when not direct_names and project dependencies exist
     (tmp_path / "project_deps.lock").write_text(
-        '''
+        """
         version = 1
 
         [project]
@@ -388,15 +376,18 @@ def test_read_uv_lock_direct_names_project_dependencies(tmp_path: Path) -> None:
         [[package]]
         name = "project-dep2"
         version = "2.0.0"
-        '''
+        """
     )
-    assert read_uv_lock(tmp_path / "project_deps.lock") == {"project-dep1": "1.0.0", "project-dep2": "2.0.0"}
+    assert read_uv_lock(tmp_path / "project_deps.lock") == {
+        "project-dep1": "1.0.0",
+        "project-dep2": "2.0.0",
+    }
 
 
 def test_read_uv_lock_direct_names_dependency_groups(tmp_path: Path) -> None:
     # Test case for direct_names population when not direct_names and dependency_groups exist
     (tmp_path / "group_deps.lock").write_text(
-        '''
+        """
         version = 1
 
         [dependency-groups.dev]
@@ -409,7 +400,7 @@ def test_read_uv_lock_direct_names_dependency_groups(tmp_path: Path) -> None:
         [[package]]
         name = "dev-dep2"
         version = "2.0.0"
-        '''
+        """
     )
     assert read_uv_lock(tmp_path / "group_deps.lock") == {"dev-dep1": "1.0.0", "dev-dep2": "2.0.0"}
 
@@ -417,7 +408,7 @@ def test_read_uv_lock_direct_names_dependency_groups(tmp_path: Path) -> None:
 def test_read_uv_lock_no_direct_names_fallback(tmp_path: Path) -> None:
     # Test case for results population when no direct_names are found, falling back to all packages
     (tmp_path / "fallback.lock").write_text(
-        '''
+        """
         version = 1
 
         [[package]]
@@ -427,16 +418,19 @@ def test_read_uv_lock_no_direct_names_fallback(tmp_path: Path) -> None:
         [[package]]
         name = "fallback-name2"
         version = "2.0.0"
-        '''
+        """
     )
-    assert read_uv_lock(tmp_path / "fallback.lock") == {"fallback-name1": "1.0.0", "fallback-name2": "2.0.0"}
+    assert read_uv_lock(tmp_path / "fallback.lock") == {
+        "fallback-name1": "1.0.0",
+        "fallback-name2": "2.0.0",
+    }
 
 
 def test_read_dockerfile_continuation(tmp_path: Path) -> None:
     # Test case covering multiline RUN commands with continuations and empty lines
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        '''
+        """
         FROM python:3.9
         RUN apt-get update && \
             apt-get install -y cowsay \
@@ -444,7 +438,7 @@ def test_read_dockerfile_continuation(tmp_path: Path) -> None:
         RUN pip install name1==1.0.0 && \
             name2==2.0.0 \
             && name3==3.0.0
-        '''
+        """
     )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {"pypi:name1": "1.0.0", "pypi:name2": "2.0.0", "pypi:name3": "3.0.0"}
@@ -454,10 +448,10 @@ def test_read_dockerfile_empty_segment(tmp_path: Path) -> None:
     # Test case covering empty segments in RUN commands (line 497)
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        '''
+        """
         FROM python:3.9
         RUN pip install name==1.0.0 && ; && pip install other==2.0.0
-        '''
+        """
     )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {"pypi:name": "1.0.0", "pypi:other": "2.0.0"}
@@ -467,10 +461,10 @@ def test_read_dockerfile_pip_no_name(tmp_path: Path) -> None:
     # Test case covering pip install without a package name (line 525)
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        '''
+        """
         FROM python:3.9
         RUN pip install -r requirements.txt
-        '''
+        """
     )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {}
@@ -480,10 +474,10 @@ def test_read_dockerfile_npm_flags_with_args(tmp_path: Path) -> None:
     # Test case covering npm install with flags that have arguments (line 543->539)
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        '''
+        """
         FROM node:16
         RUN npm install --prefix /app name@1.0.0 --registry https://registry.npmjs.org/ other@2.0.0
-        '''
+        """
     )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {"npm:name": "1.0.0", "npm:other": "2.0.0"}
@@ -493,10 +487,10 @@ def test_read_dockerfile_npm_parsed_none(tmp_path: Path) -> None:
     # Test case covering npm install where _parse_npm_token returns None (lines 571-573)
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        '''
+        """
         FROM node:16
         RUN npm install --prefix
-        '''
+        """
     )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {}
@@ -506,10 +500,10 @@ def test_read_dockerfile_npm_scoped_package_with_version(tmp_path: Path) -> None
     # Test case covering npm install with a scoped package and version that hits 581->580
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        '''
+        """
         FROM node:16
         RUN npm install @scope/pkg@1.2.3
-        '''
+        """
     )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {"npm:@scope/pkg": "1.2.3"}
@@ -519,17 +513,17 @@ def test_read_dockerfile_npm_package_without_version(tmp_path: Path) -> None:
     # Test case covering npm install with a package name but no version (line 594->593, 597->593)
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        '''
+        """
         FROM node:16
         RUN npm install pkg
-        '''
+        """
     )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {"npm:pkg": "*"}
 
 
 def test_extract_include_directives_prefixed_flags(tmp_path: Path) -> None:
-    # Test case covering _extract_include_directives with prefixed flags (lines 610, 613->606, 615->606)
+    # Test case for _extract_include_directives with prefixed flags
     tokens = ["--requirement=req.txt", "--constraint=con.txt"]
     directives = _extract_include_directives(tokens)
     assert directives == [("requirement", "req.txt"), ("constraint", "con.txt")]
@@ -560,13 +554,14 @@ def test_read_requirements(tmp_path: Path) -> None:
     assert read_requirements(tmp_path / "empty_comment.txt") == {"name": "1.0.0"}
 
     # Test case for ValueError in shlex.split (lines 361-362)
-    (tmp_path / "shlex_error.txt").write_text("name==1.0.0 \"unclosed_quote")
-    assert read_requirements(tmp_path / "shlex_error.txt") == {"name": "1.0.0 \"unclosed_quote"}
+    (tmp_path / "shlex_error.txt").write_text('name==1.0.0 "unclosed_quote')
+    assert read_requirements(tmp_path / "shlex_error.txt") == {"name": '1.0.0 "unclosed_quote'}
 
     # Test case for not candidate.exists() (lines 369-370)
     (tmp_path / "non_existent_include.txt").write_text("""-r non_existent.txt
 name==1.0.0""")
     assert read_requirements(tmp_path / "non_existent_include.txt") == {"name": "1.0.0"}
+
 
 def test_read_go_mod_single_require(tmp_path: Path) -> None:
     go_mod = tmp_path / "go.mod"
@@ -581,6 +576,7 @@ def test_read_go_mod_single_require(tmp_path: Path) -> None:
     assert dependencies == {
         "example.com/other/module": "v1.2.3",
     }
+
 
 def test_read_gemfile_lock(tmp_path: Path) -> None:
     gemfile_lock = tmp_path / "Gemfile.lock"
@@ -636,4 +632,3 @@ def test_read_pnpm_lock(tmp_path: Path) -> None:
     )
     dependencies = read_pnpm_lock(pnpm_lock)
     assert dependencies == {"name": "1.2.3"}
-

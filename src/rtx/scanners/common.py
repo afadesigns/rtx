@@ -191,7 +191,8 @@ def load_lock_dependencies(path: Path) -> dict[str, str]:
     data = read_json(path)
     if isinstance(data, dict) and "packages" in data:
         return {
-            _normalize_lock_name(name): str(meta.get("version", "0.0.0")) if isinstance(meta, dict) else "0.0.0"
+            _normalize_lock_name(name):
+                str(meta.get("version", "0.0.0")) if isinstance(meta, dict) else "0.0.0"
             for name, meta in data["packages"].items()
         }
     if isinstance(data, dict) and "dependencies" in data:
@@ -689,7 +690,7 @@ def read_dockerfile(path: Path) -> dict[str, str]:
     for command in commands:
         is_pip_install = False
         segments = re.split(r"&&|;", command)
-        for i, segment in enumerate(segments):
+        for _i, segment in enumerate(segments):
             segment = segment.strip()
             if not segment:
                 continue

@@ -36,12 +36,18 @@ runs:
 
     - name: Run rtx
       shell: bash
+      env:
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
-        rtx_args="${{ inputs.command }} --path ${{ inputs.path }} --format ${{ inputs.format }}"
-        if [[ -n "${{ inputs.output }}" ]]; then
-          rtx_args="$rtx_args --output ${{ inputs.output }}"
+        rtx_args="$INPUT_COMMAND --path $INPUT_PATH --format $INPUT_FORMAT"
+        if [[ -n "$INPUT_OUTPUT" ]]; then
+          rtx_args="$rtx_args --output $INPUT_OUTPUT"
         fi
         
         echo "Running: rtx $rtx_args"
         
-        GITHUB_TOKEN=${{ inputs.github_token }} rtx $rtx_args
+        rtx $rtx_args
