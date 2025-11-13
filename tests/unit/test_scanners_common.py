@@ -8,6 +8,7 @@ from rtx.scanners.common import (
     _parse_conda_dependency,
     _parse_requirement_line,
     merge_dependency_version,
+    read_dockerfile,
     read_requirements,
 )
 
@@ -67,3 +68,21 @@ def test_read_requirements(tmp_path: Path) -> None:
     (tmp_path / "requirements.txt").write_text("-r base.txt\n-c constraints.txt")
     requirements = read_requirements(tmp_path / "requirements.txt")
     assert requirements == {"name": "1.2.3", "other": "4.5.6"}
+
+
+def test_read_dockerfile(tmp_path: Path) -> None:
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        """
+        FROM python:3.11
+        RUN pip install name==1.2.3
+        RUN npm install other@4.5.6 && \
+            pip install another==7.8.9
+        """
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {
+        "pypi:name": "1.2.3",
+        "npm:other": "4.5.6",
+        "pypi:another": "7.8.9",
+    }
