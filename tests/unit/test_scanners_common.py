@@ -18,6 +18,7 @@ from rtx.scanners.common import (
     _normalize_specifier,
     merge_dependency_version,
     normalize_version,
+    load_json_dependencies,
     read_brewfile,
     read_cargo_lock,
     read_composer_lock,
@@ -159,6 +160,25 @@ def test_normalize_specifier(specifier: str | None, expected: str) -> None:
 )
 def test_normalize_version(raw_version: str, expected: str) -> None:
     assert normalize_version(raw_version) == expected
+
+
+def test_load_json_dependencies(tmp_path: Path) -> None:
+    # Test case for a JSON file that is a dictionary and contains the key
+    (tmp_path / "deps.json").write_text('{"dependencies": {"name": "1.2.3"}}')
+    assert load_json_dependencies(tmp_path / "deps.json") == {"name": "1.2.3"}
+
+    # Test case for a JSON file that is a dictionary but does not contain the key
+    (tmp_path / "empty.json").write_text('{"other": "value"}')
+    assert load_json_dependencies(tmp_path / "empty.json") == {}
+
+    # Test case for a JSON file that is not a dictionary (e.g., a JSON array)
+    (tmp_path / "array.json").write_text('["name", "1.2.3"]')
+    assert load_json_dependencies(tmp_path / "array.json") == {}
+
+    # Test case for a JSON file that is not a dictionary (e.g., a primitive value)
+    (tmp_path / "primitive.json").write_text('"just_a_string"')
+    assert load_json_dependencies(tmp_path / "primitive.json") == {}
+
 
 def test_read_requirements(tmp_path: Path) -> None:
     (tmp_path / "base.txt").write_text("name==1.2.3")
