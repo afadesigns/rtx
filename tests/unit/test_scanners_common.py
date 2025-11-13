@@ -12,6 +12,7 @@ from rtx.scanners.common import (
     _parse_conda_dependency,
     _parse_requirement_line,
     _parse_pnpm_package_key,
+    _pip_install_start,
     _clean_pnpm_version,
     load_json_dependencies,
     load_lock_dependencies,
@@ -732,3 +733,9 @@ def test_read_cargo_lock(tmp_path: Path) -> None:
     )
     dependencies = read_cargo_lock(cargo_lock)
     assert dependencies == {}
+
+def test__pip_install_start(tmp_path: Path) -> None:
+    # Test case for non-pip install command
+    tokens = ["not", "pip", "install"]
+    start = _pip_install_start(tokens)
+    assert start is None
