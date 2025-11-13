@@ -491,7 +491,7 @@ def read_requirements(
         try:
             tokens = shlex.split(cleaned) if cleaned else []
         except ValueError:
-            continue
+            tokens = []
 
         directives = _extract_include_directives(tokens)
         if directives:
@@ -687,7 +687,9 @@ def read_dockerfile(path: Path) -> dict[str, str]:
         commands.append(" ".join(current))
 
     for command in commands:
-        for segment in re.split(r"&&|;", command):
+        is_pip_install = False
+        segments = re.split(r"&&|;", command)
+        for i, segment in enumerate(segments):
             segment = segment.strip()
             if not segment:
                 continue
@@ -697,6 +699,7 @@ def read_dockerfile(path: Path) -> dict[str, str]:
 
             pip_start = _pip_install_start(tokens)
             if pip_start is not None:
+                is_pip_install = True
                 idx = pip_start
                 while idx < len(tokens):
                     token = tokens[idx]
@@ -732,6 +735,18 @@ def read_dockerfile(path: Path) -> dict[str, str]:
                         continue
                     name, version = npm_parsed
                     out.setdefault(f"npm:{name}", version)
+                continue
+
+            if is_pip_install:
+                for token in tokens:
+                    if token.startswith("-"):
+                        continue
+                    parsed = _parse_requirement_line(token)
+                    if parsed is None:
+                        continue
+                    name, version = parsed
+                    if name:
+                        out.setdefault(f"pypi:{name}", version)
 
     return out
 

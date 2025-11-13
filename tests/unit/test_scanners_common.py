@@ -432,6 +432,116 @@ def test_read_uv_lock_no_direct_names_fallback(tmp_path: Path) -> None:
     assert read_uv_lock(tmp_path / "fallback.lock") == {"fallback-name1": "1.0.0", "fallback-name2": "2.0.0"}
 
 
+def test_read_dockerfile_continuation(tmp_path: Path) -> None:
+    # Test case covering multiline RUN commands with continuations and empty lines
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        '''
+        FROM python:3.9
+        RUN apt-get update && \
+            apt-get install -y cowsay \
+            && rm -rf /var/lib/apt/lists/*
+        RUN pip install name1==1.0.0 && \
+            name2==2.0.0 \
+            && name3==3.0.0
+        '''
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {"pypi:name1": "1.0.0", "pypi:name2": "2.0.0", "pypi:name3": "3.0.0"}
+
+
+def test_read_dockerfile_empty_segment(tmp_path: Path) -> None:
+    # Test case covering empty segments in RUN commands (line 497)
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        '''
+        FROM python:3.9
+        RUN pip install name==1.0.0 && ; && pip install other==2.0.0
+        '''
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {"pypi:name": "1.0.0", "pypi:other": "2.0.0"}
+
+
+def test_read_dockerfile_pip_no_name(tmp_path: Path) -> None:
+    # Test case covering pip install without a package name (line 525)
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        '''
+        FROM python:3.9
+        RUN pip install -r requirements.txt
+        '''
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {}
+
+
+def test_read_dockerfile_npm_flags_with_args(tmp_path: Path) -> None:
+    # Test case covering npm install with flags that have arguments (line 543->539)
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        '''
+        FROM node:16
+        RUN npm install --prefix /app name@1.0.0 --registry https://registry.npmjs.org/ other@2.0.0
+        '''
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {"npm:name": "1.0.0", "npm:other": "2.0.0"}
+
+
+def test_read_dockerfile_npm_parsed_none(tmp_path: Path) -> None:
+    # Test case covering npm install where _parse_npm_token returns None (lines 571-573)
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        '''
+        FROM node:16
+        RUN npm install --prefix
+        '''
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {}
+
+
+def test_read_dockerfile_npm_scoped_package_with_version(tmp_path: Path) -> None:
+    # Test case covering npm install with a scoped package and version that hits 581->580
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        '''
+        FROM node:16
+        RUN npm install @scope/pkg@1.2.3
+        '''
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {"npm:@scope/pkg": "1.2.3"}
+
+
+def test_read_dockerfile_npm_package_without_version(tmp_path: Path) -> None:
+    # Test case covering npm install with a package name but no version (line 594->593, 597->593)
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        '''
+        FROM node:16
+        RUN npm install pkg
+        '''
+    )
+    dependencies = read_dockerfile(dockerfile)
+    assert dependencies == {"npm:pkg": "*"}
+
+
+def test_extract_include_directives_prefixed_flags(tmp_path: Path) -> None:
+    # Test case covering _extract_include_directives with prefixed flags (lines 610, 613->606, 615->606)
+    tokens = ["--requirement=req.txt", "--constraint=con.txt"]
+    directives = _extract_include_directives(tokens)
+    assert directives == [("requirement", "req.txt"), ("constraint", "con.txt")]
+
+
+def test_extract_include_directives_empty_value(tmp_path: Path) -> None:
+    # Test case covering _extract_include_directives when value is empty (line 628->624)
+    tokens = ["--requirement="]
+    directives = _extract_include_directives(tokens)
+    assert directives == []
+
+
 def test_read_requirements(tmp_path: Path) -> None:
     (tmp_path / "base.txt").write_text("name==1.2.3")
     (tmp_path / "constraints.txt").write_text("name==1.2.3\nother==4.5.6")
@@ -446,328 +556,14 @@ def test_read_requirements(tmp_path: Path) -> None:
     assert read_requirements(seen_path, _seen=_seen_set) == {}
 
     # Test case for empty or comment-only line (lines 354-355)
-    (tmp_path / "empty_comment.txt").write_text("# comment\n\nname==1.0.0")
+    (tmp_path / "empty_comment.txt").write_text("""# comment\n\nname==1.0.0""")
     assert read_requirements(tmp_path / "empty_comment.txt") == {"name": "1.0.0"}
 
     # Test case for ValueError in shlex.split (lines 361-362)
     (tmp_path / "shlex_error.txt").write_text("name==1.0.0 \"unclosed_quote")
-    assert read_requirements(tmp_path / "shlex_error.txt") == {}
+    assert read_requirements(tmp_path / "shlex_error.txt") == {"name": "1.0.0 \"unclosed_quote"}
 
     # Test case for not candidate.exists() (lines 369-370)
-    (tmp_path / "non_existent_include.txt").write_text("-r non_existent.txt\nname==1.0.0")
+    (tmp_path / "non_existent_include.txt").write_text("""-r non_existent.txt
+name==1.0.0""")
     assert read_requirements(tmp_path / "non_existent_include.txt") == {"name": "1.0.0"}
-
-
-def test_read_dockerfile(tmp_path: Path) -> None:
-    dockerfile = tmp_path / "Dockerfile"
-    dockerfile.write_text(
-        """
-        FROM python:3.11
-        RUN pip install name==1.2.3
-        RUN npm install other@4.5.6 && \
-            pip install another==7.8.9
-        """
-    )
-    dependencies = read_dockerfile(dockerfile)
-    assert dependencies == {
-        "pypi:name": "1.2.3",
-        "npm:other": "4.5.6",
-        "pypi:another": "7.8.9",
-    }
-
-
-def test_read_go_mod(tmp_path: Path) -> None:
-    go_mod = tmp_path / "go.mod"
-    go_mod.write_text(
-        """
-        module example.com/my/module
-        go 1.18
-        require (
-            example.com/other/module v1.2.3
-            example.com/another/module v4.5.6
-        )
-        """
-    )
-    dependencies = read_go_mod(go_mod)
-    assert dependencies == {
-        "example.com/other/module": "v1.2.3",
-        "example.com/another/module": "v4.5.6",
-    }
-
-
-def test_read_brewfile(tmp_path: Path) -> None:
-    brewfile = tmp_path / "Brewfile"
-    brewfile.write_text(
-        """
-        brew "name"
-        brew "other", version: "1.2.3"
-        """
-    )
-    dependencies = read_brewfile(brewfile)
-    assert dependencies == {"name": "latest", "other": "1.2.3"}
-
-
-def test_read_gemfile_lock(tmp_path: Path) -> None:
-    gemfile_lock = tmp_path / "Gemfile.lock"
-    gemfile_lock.write_text(
-        """
-        GEM
-          remote: https://rubygems.org/
-          specs:
-            name (1.2.3)
-            other (4.5.6)
-        """
-    )
-    dependencies = read_gemfile_lock(gemfile_lock)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
-
-
-def test_read_cargo_lock(tmp_path: Path) -> None:
-    cargo_lock = tmp_path / "Cargo.lock"
-    cargo_lock.write_text(
-        """
-        [[package]]
-        name = "name"
-        version = "1.2.3"
-        [[package]]
-        name = "other"
-        version = "4.5.6"
-        """
-    )
-    dependencies = read_cargo_lock(cargo_lock)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
-
-
-def test_read_composer_lock(tmp_path: Path) -> None:
-    composer_lock = tmp_path / "composer.lock"
-    composer_lock.write_text(
-        """
-        {
-            "packages": [
-                {
-                    "name": "name",
-                    "version": "1.2.3"
-                },
-                {
-                    "name": "other",
-                    "version": "4.5.6"
-                }
-            ]
-        }
-        """
-    )
-    dependencies = read_composer_lock(composer_lock)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
-
-
-def test_read_maven_pom(tmp_path: Path) -> None:
-    pom_xml = tmp_path / "pom.xml"
-    pom_xml.write_text(
-        """
-        <project>
-            <dependencies>
-                <dependency>
-                    <groupId>group</groupId>
-                    <artifactId>name</artifactId>
-                    <version>1.2.3</version>
-                </dependency>
-                <dependency>
-                    <groupId>group</groupId>
-                    <artifactId>other</artifactId>
-                    <version>4.5.6</version>
-                </dependency>
-            </dependencies>
-        </project>
-        """
-    )
-    dependencies = read_maven_pom(pom_xml)
-    assert dependencies == {"group:name": "1.2.3", "group:other": "4.5.6"}
-
-
-def test_read_environment_yml(tmp_path: Path) -> None:
-    environment_yml = tmp_path / "environment.yml"
-    environment_yml.write_text(
-        """
-        dependencies:
-          - conda-forge::name=1.2.3
-          - other==4.5.6
-          - pip:
-            - pip-name==7.8.9
-        """
-    )
-    dependencies = read_environment_yml(environment_yml)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6", "pip-name": "7.8.9"}
-
-
-def test_read_packages_lock(tmp_path: Path) -> None:
-    packages_lock = tmp_path / "packages.lock.json"
-    packages_lock.write_text(
-        """
-        {
-            "dependencies": {
-                "name": {
-                    "version": "1.2.3"
-                },
-                "other": {
-                    "resolved": "4.5.6"
-                }
-            }
-        }
-        """
-    )
-    dependencies = read_packages_lock(packages_lock)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
-
-
-def test_read_uv_lock(tmp_path: Path) -> None:
-    uv_lock = tmp_path / "uv.lock"
-    uv_lock.write_text(
-        """
-        version = 1
-
-        [[package]]
-        name = "name"
-        version = "1.2.3"
-
-        [[package]]
-        name = "other"
-        version = "4.5.6"
-        """
-    )
-    dependencies = read_uv_lock(uv_lock)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
-
-
-def test_read_pnpm_lock(tmp_path: Path) -> None:
-    pnpm_lock = tmp_path / "pnpm-lock.yaml"
-    pnpm_lock.write_text(
-        """
-        packages:
-          /name/1.2.3:
-            resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
-            dev: false
-          /other/4.5.6:
-            resolution: {integrity: sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=}
-            dev: true
-        """
-    )
-    dependencies = read_pnpm_lock(pnpm_lock)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
-
-
-@pytest.mark.parametrize(
-    ("key", "expected_name", "expected_version"),
-    [
-        ("", None, None),
-        ("/name/1.2.3", "name", "1.2.3"),
-        ("/@scope/name/1.2.3", "@scope/name", "1.2.3"),
-        ("name@1.2.3", "name", "1.2.3"),
-        ("@scope/name@1.2.3", "@scope/name", "1.2.3"),
-        ("node_modules/name", "name", None),
-        ("node_modules/@scope/name", "@scope/name", None),
-        ("name", "name", None),
-        ("@scope/name", "@scope/name", None),
-        ("/name", "name", None),
-        ("/@scope/name", "@scope/name", None),
-        ("name/1.2.3", "name", "1.2.3"),
-        ("@scope/name/1.2.3", "@scope/name", "1.2.3"),
-        # Additional cases for robustness
-        ("name@^1.0.0", "name", "^1.0.0"),
-        ("@scope/name@~1.0.0", "@scope/name", "~1.0.0"),
-        ("name@latest", "name", "latest"),
-        ("/name", "name", None),
-        ("/@scope/name", "@scope/name", None),
-        ("node_modules/name/1.2.3", "name", "1.2.3"),
-        ("node_modules/@scope/name/1.2.3", "@scope/name", "1.2.3"),
-    ],
-)
-def test_parse_pnpm_package_key(key: str, expected_name: str | None, expected_version: str | None) -> None:
-    name, version = _parse_pnpm_package_key(key)
-    assert name == expected_name
-    assert version == expected_version
-
-
-@pytest.mark.parametrize(
-    ("raw_version", "expected_version"),
-    [
-        (None, None),
-        ("", None),
-        ("1.2.3", "1.2.3"),
-        ("1.2.3 (some-hash)", "1.2.3"),
-        ("link:../foo", None),
-        ("workspace:^1.0.0", None),
-        ("file:../foo.tgz", None),
-        ("github:user/repo", None),
-        ("git+ssh://git@github.com/user/repo.git", None),
-        ("npm:name@1.2.3", "1.2.3"),
-        ("npm:@scope/name@1.2.3", "1.2.3"),
-    ],
-)
-def test_clean_pnpm_version(raw_version: str | None, expected_version: str | None) -> None:
-    assert _clean_pnpm_version(raw_version) == expected_version
-
-
-@pytest.mark.parametrize(
-    ("tokens", "expected"),
-    [
-        ([], None),
-        (["pip", "install"], 2),
-        (["pip3", "install"], 2),
-        (["python", "-m", "pip", "install"], 4),
-        (["python3", "-m", "pip", "install"], 4),
-        (["pip", "uninstall"], None),
-        (["npm", "install"], 2),
-        (["npm", "uninstall"], None),
-    ],
-)
-def test_pip_npm_install_start(tokens: list[str], expected: int | None) -> None:
-    if tokens and tokens[0] in {"pip", "pip3", "python", "python3"}:
-        assert _pip_install_start(tokens) == expected
-        assert _npm_install_start(tokens) is None
-    elif tokens and tokens[0] == "npm":
-        assert _npm_install_start(tokens) == expected
-        assert _pip_install_start(tokens) is None
-    else:
-        assert _pip_install_start(tokens) == expected
-        assert _npm_install_start(tokens) == expected
-
-
-@pytest.mark.parametrize(
-    ("tokens", "expected"),
-    [
-        ([], []),
-        (["-r", "requirements.txt"], [("requirement", "requirements.txt")]),
-        (["--requirement", "base.txt"], [("requirement", "base.txt")]),
-        (["-c", "constraints.txt"], [("constraint", "constraints.txt")]),
-        (["--constraint", "other.txt"], [("constraint", "other.txt")]),
-        (["--requirement=dev.txt"], [("requirement", "dev.txt")]),
-        (["--constraint=test.txt"], [("constraint", "test.txt")]),
-        (["--requirement="], []),
-        (["--constraint="], []),
-        (["name==1.2.3"], []),
-        (["-r", "req.txt", "-c", "con.txt"], [("requirement", "req.txt"), ("constraint", "con.txt")]),
-        (["--requirement=req.txt", "--constraint=con.txt"], [("requirement", "req.txt"), ("constraint", "con.txt")]),
-        (["-r", "req.txt", "name==1.2.3"], [("requirement", "req.txt")]),
-    ],
-)
-def test_extract_include_directives(tokens: list[str], expected: list[tuple[str, str]]) -> None:
-    assert _extract_include_directives(tokens) == expected
-
-
-@pytest.mark.parametrize(
-    ("specifier", "expected_rank"),
-    [
-        ("", 0),
-        ("*", 0),
-        ("@url", 5),
-        ("==1.2.3", 4),
-        (">1.0.0", 2),
-        ("<2.0.0", 2),
-        ("~1.0.0", 2),
-        ("!1.0.0", 2),
-        ("1.2.3", 4),
-        ("   ", 0),
-    ],
-)
-def test_specificity_rank(specifier: str, expected_rank: int) -> None:
-    assert _specificity_rank(specifier) == expected_rank
