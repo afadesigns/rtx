@@ -545,6 +545,11 @@ def test_extract_include_directives_prefixed_flags(tmp_path: Path) -> None:
     directives = _extract_include_directives(tokens)
     assert directives == [("requirement", "req.txt"), ("constraint", "con.txt")]
 
+    # Test case for -r flag with no value
+    tokens = ["-r"]
+    directives = _extract_include_directives(tokens)
+    assert directives == []
+
 
 def test_extract_include_directives_empty_value(tmp_path: Path) -> None:
     # Test case covering _extract_include_directives when value is empty (line 628->624)
