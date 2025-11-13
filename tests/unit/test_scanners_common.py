@@ -17,6 +17,7 @@ from rtx.scanners.common import (
     read_go_mod,
     read_maven_pom,
     read_packages_lock,
+    read_pnpm_lock,
     read_poetry_lock,
     read_requirements,
     read_uv_lock,
@@ -273,4 +274,21 @@ def test_read_uv_lock(tmp_path: Path) -> None:
         """
     )
     dependencies = read_uv_lock(uv_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+
+def test_read_pnpm_lock(tmp_path: Path) -> None:
+    pnpm_lock = tmp_path / "pnpm-lock.yaml"
+    pnpm_lock.write_text(
+        """
+        packages:
+          /name/1.2.3:
+            resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+            dev: false
+          /other/4.5.6:
+            resolution: {integrity: sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=}
+            dev: true
+        """
+    )
+    dependencies = read_pnpm_lock(pnpm_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
