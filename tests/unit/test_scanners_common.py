@@ -6,10 +6,12 @@ import pytest
 
 from rtx.scanners.common import (
     _clean_pnpm_version,
+    _npm_install_start,
     _parse_conda_dependency,
     _parse_npm_token,
     _parse_pnpm_package_key,
     _parse_requirement_line,
+    _pip_install_start,
     merge_dependency_version,
     read_brewfile,
     read_cargo_lock,
@@ -347,3 +349,28 @@ def test_parse_pnpm_package_key(key: str, expected_name: str | None, expected_ve
 )
 def test_clean_pnpm_version(raw_version: str | None, expected_version: str | None) -> None:
     assert _clean_pnpm_version(raw_version) == expected_version
+
+
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        ([], None),
+        (["pip", "install"], 2),
+        (["pip3", "install"], 2),
+        (["python", "-m", "pip", "install"], 4),
+        (["python3", "-m", "pip", "install"], 4),
+        (["pip", "uninstall"], None),
+        (["npm", "install"], 2),
+        (["npm", "uninstall"], None),
+    ],
+)
+def test_pip_npm_install_start(tokens: list[str], expected: int | None) -> None:
+    if tokens and tokens[0] in {"pip", "pip3", "python", "python3"}:
+        assert _pip_install_start(tokens) == expected
+        assert _npm_install_start(tokens) is None
+    elif tokens and tokens[0] == "npm":
+        assert _npm_install_start(tokens) == expected
+        assert _pip_install_start(tokens) is None
+    else:
+        assert _pip_install_start(tokens) == expected
+        assert _npm_install_start(tokens) == expected
