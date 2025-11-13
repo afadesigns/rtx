@@ -189,19 +189,27 @@ def load_json_dependencies(path: Path, key: str = "dependencies") -> dict[str, s
 
 def load_lock_dependencies(path: Path) -> dict[str, str]:
     data = read_json(path)
-    if isinstance(data, dict) and "packages" in data:
-        return {
-            _normalize_lock_name(name):
-                str(meta.get("version", "0.0.0")) if isinstance(meta, dict) else "0.0.0"
-            for name, meta in data["packages"].items()
-        }
-    if isinstance(data, dict) and "dependencies" in data:
-        out: dict[str, str] = {}
+    out: dict[str, str] = {}
+    if "packages" in data:
+        for name, info in data["packages"].items():
+            name = _normalize_lock_name(name)
+            if isinstance(info, dict):
+                version = info.get("version", "0.0.0")
+                if "resolved" in info:
+                    version = info["resolved"]
+                out[name] = version
+            else:
+                out[name] = "0.0.0"
+    elif "dependencies" in data:
         for name, info in data["dependencies"].items():
-            if isinstance(info, dict) and "version" in info:
-                out[_normalize_lock_name(name)] = str(info["version"])
-        return out
-    return {}
+            name = _normalize_lock_name(name)
+            version = "0.0.0"
+            if isinstance(info, dict):
+                version = info.get("version", "0.0.0")
+                if "resolved" in info:
+                    version = info["resolved"]
+            out[name] = version
+    return out
 
 
 def _normalize_lock_name(name: str) -> str:
@@ -650,6 +658,8 @@ def read_packages_lock(path: Path) -> dict[str, str]:
                 version = info.get("resolved", "0.0.0")
             else:
                 version = info.get("version", "0.0.0") if isinstance(info, dict) else "0.0.0"
+            if isinstance(info, dict) and "resolved" in info:
+                version = info["resolved"]
             out[name] = version
     return out
 

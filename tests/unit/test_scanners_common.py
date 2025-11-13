@@ -220,6 +220,22 @@ def test_load_lock_dependencies(tmp_path: Path) -> None:
     )
     assert load_lock_dependencies(tmp_path / "lock4.json") == {"name": "1.2.3", "other": "4.5.6"}
 
+    # Test case for package with resolved field
+    packages_lock = tmp_path / "packages.lock.json"
+    packages_lock.write_text(
+        """
+        {
+            "dependencies": {
+                "name": {
+                    "resolved": "1.2.3"
+                }
+            }
+        }
+        """
+    )
+    dependencies = load_lock_dependencies(packages_lock)
+    assert dependencies == {"name": "1.2.3"}
+
     # Test case for a lock file with "dependencies" key but empty
     (tmp_path / "lock5.json").write_text(
         """
@@ -240,8 +256,7 @@ def test_load_lock_dependencies(tmp_path: Path) -> None:
         }
         """
     )
-    assert load_lock_dependencies(tmp_path / "lock6.json") == {}
-
+    assert load_lock_dependencies(tmp_path / "lock6.json") == {"name": "0.0.0"}
     # Test case for a lock file that is not a dictionary (e.g., a JSON array)
     (tmp_path / "lock7.json").write_text("[1, 2, 3]")
     assert load_lock_dependencies(tmp_path / "lock7.json") == {}
