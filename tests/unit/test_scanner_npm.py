@@ -67,3 +67,27 @@ def test_normalize_npm_version() -> None:
     assert _normalize_npm_version("=1.2.3") == "1.2.3"
     assert _normalize_npm_version("https://example.com/package.tgz") == "@ https://example.com/package.tgz"
     assert _normalize_npm_version("git+https://github.com/user/repo.git") == "@ git+https://github.com/user/repo.git"
+
+
+def test_npm_scanner_record_prefers_lockfile_source(tmp_path: Path) -> None:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "package.json").write_text(
+        """{"dependencies": {"lodash": "^4.17.21"}}""",
+        encoding="utf-8",
+    )
+    (project / "package-lock.json").write_text(
+        textwrap.dedent(
+            """
+            {
+              "packages": {
+                "node_modules/lodash": {"version": "4.17.21"}
+              }
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+    scanner = NpmScanner()
+    packages = scanner.scan(project)
+    assert packages[0].metadata["source"] == "package-lock.json"
