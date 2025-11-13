@@ -9,6 +9,7 @@ from rtx.scanners.common import (
     _parse_requirement_line,
     merge_dependency_version,
     read_dockerfile,
+    read_go_mod,
     read_requirements,
 )
 
@@ -85,4 +86,23 @@ def test_read_dockerfile(tmp_path: Path) -> None:
         "pypi:name": "1.2.3",
         "npm:other": "4.5.6",
         "pypi:another": "7.8.9",
+    }
+
+
+def test_read_go_mod(tmp_path: Path) -> None:
+    go_mod = tmp_path / "go.mod"
+    go_mod.write_text(
+        """
+        module example.com/my/module
+        go 1.18
+        require (
+            example.com/other/module v1.2.3
+            example.com/another/module v4.5.6
+        )
+        """
+    )
+    dependencies = read_go_mod(go_mod)
+    assert dependencies == {
+        "example.com/other/module": "v1.2.3",
+        "example.com/another/module": "v4.5.6",
     }

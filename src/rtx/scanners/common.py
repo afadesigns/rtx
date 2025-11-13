@@ -535,7 +535,7 @@ def read_go_mod(path: Path) -> dict[str, str]:
     in_block = False
     for raw_line in lines:
         line = raw_line.strip()
-        if not line or line.startswith(("module", "//", "replace")):
+        if not line or line.startswith(("module", "//", "replace", "go")):
             continue
         if line.startswith("require ("):
             in_block = True
