@@ -454,10 +454,11 @@ def test_read_dockerfile_continuation(tmp_path: Path) -> None:
         RUN pip install name1==1.0.0 && \
             name2==2.0.0 \
             && name3==3.0.0
+        RUN pip install name4
         """
     )
     dependencies = read_dockerfile(dockerfile)
-    assert dependencies == {"pypi:name1": "1.0.0", "pypi:name2": "2.0.0", "pypi:name3": "3.0.0"}
+    assert dependencies == {"pypi:name1": "1.0.0", "pypi:name2": "2.0.0", "pypi:name3": "3.0.0", "pypi:name4": "*"}
 
 
 def test_read_dockerfile_empty_segment(tmp_path: Path) -> None:
