@@ -57,3 +57,4 @@ bin/
 reports/
 artifacts/
 src/rtx/scanners/common.py,cover
+\n# Codex\n.codex\ncodex
