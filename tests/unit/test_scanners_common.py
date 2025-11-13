@@ -72,12 +72,28 @@ def test_merge_dependency_version() -> None:
     assert merge_dependency_version(store, "name", "1.2.3") is True
     assert store["name"] == "1.2.3"
     assert merge_dependency_version(store, "name", "1.2.3") is False
+    assert store["name"] == "1.2.3"
     assert merge_dependency_version(store, "name", "*") is False
     assert store["name"] == "1.2.3"
     assert merge_dependency_version(store, "name", ">=1.2.3") is False
     assert store["name"] == "1.2.3"
     assert merge_dependency_version(store, "name", "@ https://example.com/pkg.zip") is True
     assert store["name"] == "@ https://example.com/pkg.zip"
+
+    # Test case for existing being more specific
+    store = {"name": "==2.0.0"}
+    assert merge_dependency_version(store, "name", ">1.0.0") is False
+    assert store["name"] == "==2.0.0"
+
+    # Test case for both being unspecific
+    store = {"name": "*"}
+    assert merge_dependency_version(store, "name", "*") is False
+    assert store["name"] == "*"
+
+    # Test case for existing being a version, candidate being unspecific
+    store = {"name": "1.0.0"}
+    assert merge_dependency_version(store, "name", "*") is False
+    assert store["name"] == "1.0.0"
 
 
 def test_read_requirements(tmp_path: Path) -> None:
