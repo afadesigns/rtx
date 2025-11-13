@@ -646,6 +646,33 @@ def test_read_pnpm_lock(tmp_path: Path) -> None:
             dev: false
         """
     )
+    dependencies = read_pnpm_lock(pnpm_lock)
+    assert dependencies == {"name": "1.2.3"}
+
+    # Test case for package with specifier field
+    pnpm_lock.write_text(
+        """
+        packages:
+          /name/1.2.3:
+            specifier: "1.2.3"
+            resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+            dev: false
+        """
+    )
+    dependencies = read_pnpm_lock(pnpm_lock)
+    assert dependencies == {"name": "1.2.3"}
+
+    # Test case for package missing version
+    pnpm_lock.write_text(
+        """
+        packages:
+          /name/:
+            resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+            dev: false
+        """
+    )
+    dependencies = read_pnpm_lock(pnpm_lock)
+    assert dependencies == {}
 def test_read_cargo_lock(tmp_path: Path) -> None:
     cargo_lock = tmp_path / "Cargo.lock"
     cargo_lock.write_text(
