@@ -29,7 +29,7 @@ jobs:
       no_changes: ${{ steps.analyse.outputs.no_changes }}
       changed_files: ${{ steps.analyse.outputs.changed_files }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b
         with:
           fetch-depth: 0
       - id: analyse
@@ -113,7 +113,7 @@ PY
       force_ci: ${{ steps.collect.outputs.force_ci }}
       skip_reason: ${{ steps.collect.outputs.skip_reason }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b
       - id: collect
         env:
           CODEX_DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
@@ -541,7 +541,7 @@ PY
       CODEX_CD_TARGET: ${{ env.CODEX_CD_TARGET }}
       CODEX_CD_ALLOW_TAGS: ${{ env.CODEX_CD_ALLOW_TAGS }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b
       - name: Matrix context
         run: |
           echo "Matrix label: ${CODEX_CI_MATRIX_LABEL}"
@@ -970,7 +970,7 @@ PY
       ) &&
       needs.detect.outputs.deploy_hook_count != '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b
       - name: Summarise deploy gates
         run: |
           echo "CD enabled (env): ${CODEX_CD_ENABLED}"
@@ -1019,6 +1019,4 @@ PY
             .codex/ci/deploy-report.*
             .codex/ci/**/*.log
         continue-on-error: true
-          skip_docs_only = config_bool("ci.skip_docs_only", True)
-          docs_only_env = os.environ.get("CODEX_DOCS_ONLY", "false").lower() == "true"
-          no_changes_env = os.environ.get("CODEX_NO_CHANGES", "false").lower() == "true"
+
