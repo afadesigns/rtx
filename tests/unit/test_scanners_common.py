@@ -22,6 +22,7 @@ from rtx.scanners.common import (
     read_poetry_lock,
     read_requirements,
     read_uv_lock,
+    read_cargo_lock,
 )
 
 
@@ -632,18 +633,28 @@ def test_read_pnpm_lock(tmp_path: Path) -> None:
             dev: false
         """
     )
-    dependencies = read_pnpm_lock(pnpm_lock)
-    assert dependencies == {"name": "1.2.3"}
-
-    # Test case for package with specifier field
-    pnpm_lock.write_text(
+def test_read_cargo_lock(tmp_path: Path) -> None:
+    cargo_lock = tmp_path / "Cargo.lock"
+    cargo_lock.write_text(
         """
-        packages:
-          /name/1.2.3:
-            specifier: "1.2.3"
-            resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
-            dev: false
+        [[package]]
+        name = "name"
+        version = "1.2.3"
+
+        [[package]]
+        name = "other"
+        version = "4.5.6"
         """
     )
-    dependencies = read_pnpm_lock(pnpm_lock)
-    assert dependencies == {"name": "1.2.3"}
+    dependencies = read_cargo_lock(cargo_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+    # Test case for package missing version
+    cargo_lock.write_text(
+        """
+        [[package]]
+        name = "name"
+        """
+    )
+    dependencies = read_cargo_lock(cargo_lock)
+    assert dependencies == {}
