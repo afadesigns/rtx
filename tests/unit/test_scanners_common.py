@@ -6,6 +6,7 @@ import pytest
 
 from rtx.scanners.common import (
     _clean_pnpm_version,
+    _extract_include_directives,
     _npm_install_start,
     _parse_conda_dependency,
     _parse_npm_token,
@@ -374,3 +375,25 @@ def test_pip_npm_install_start(tokens: list[str], expected: int | None) -> None:
     else:
         assert _pip_install_start(tokens) == expected
         assert _npm_install_start(tokens) == expected
+
+
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        ([], []),
+        (["-r", "requirements.txt"], [("requirement", "requirements.txt")]),
+        (["--requirement", "base.txt"], [("requirement", "base.txt")]),
+        (["-c", "constraints.txt"], [("constraint", "constraints.txt")]),
+        (["--constraint", "other.txt"], [("constraint", "other.txt")]),
+        (["--requirement=dev.txt"], [("requirement", "dev.txt")]),
+        (["--constraint=test.txt"], [("constraint", "test.txt")]),
+        (["--requirement="], []),
+        (["--constraint="], []),
+        (["name==1.2.3"], []),
+        (["-r", "req.txt", "-c", "con.txt"], [("requirement", "req.txt"), ("constraint", "con.txt")]),
+        (["--requirement=req.txt", "--constraint=con.txt"], [("requirement", "req.txt"), ("constraint", "con.txt")]),
+        (["-r", "req.txt", "name==1.2.3"], [("requirement", "req.txt")]),
+    ],
+)
+def test_extract_include_directives(tokens: list[str], expected: list[tuple[str, str]]) -> None:
+    assert _extract_include_directives(tokens) == expected
