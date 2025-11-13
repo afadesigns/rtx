@@ -1,0 +1,48 @@
+{
+  "python": {
+    "enable": true,
+    "tests": true
+  },
+  "node": {
+    "enable": true,
+    "lint": true,
+    "tests": true
+  },
+  "go": {
+    "enable": true
+  },
+  "rust": {
+    "enable": true
+  },
+  "terraform": {
+    "enable": true
+  },
+  "docker": {
+    "lint": true
+  },
+  "ci": {
+    "skip_docs_only": true,
+    "always_run": [],
+    "force_paths": [],
+    "max_parallel": null,
+    "fail_fast": true
+  },
+  "deploy": {
+    "enable": true
+  },
+  "hooks": {
+    "ci": true,
+    "deploy": true
+  },
+  "targets": {
+    "python": [],
+    "node": [],
+    "go": [],
+    "rust": [],
+    "terraform": [],
+    "docker": []
+  },
+  "secrets": {
+    "required": []
+  }
+}

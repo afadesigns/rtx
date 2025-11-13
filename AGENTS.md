@@ -23,3 +23,10 @@ Follow Conventional Commits (`feat:`, `fix:`, `docs:`) mirrored in history; auto
 
 ## Security & Configuration Tips
 Never check in secrets; rely on environment configuration and sample manifests under `examples/`. Run `semgrep --config p/ci` locally to catch policy regressions before CI. Report suspected vulnerabilities through `SECURITY.md`, and include SBOM diffs from `make sbom` whenever dependency risk or advisory coverage changes.
+
+
+## Vault Secrets Automation
+
+- Codex agents MUST resolve every secret, credential, or API token from Vault at `/srv/vault` using the shared manifest/loader (`05-vault-loader.zsh` and `10-secrets.zsh`).
+- Plaintext secrets MUST NOT be stored in repositories or local config files; add or update a `secret/...` path in Vault instead.
+- Automation MUST reference these Vault paths (and document the manifest linkage) rather than hardcoding values in configs, scripts, or AGENTS files.
