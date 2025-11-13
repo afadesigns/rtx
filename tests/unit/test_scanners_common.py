@@ -45,7 +45,8 @@ from rtx.scanners.common import (
         ("name @ https://example.com/pkg.zip", ("name", "@ https://example.com/pkg.zip")),
         ("name>=1.2.3", ("name", ">=1.2.3")),
         ("name<2.0.0,>=1.2.3", ("name", ">=1.2.3,<2.0.0")),
-        ("invalid-package-name>", None), # New test case for InvalidRequirement without ==
+        ("invalid-package-name>", None),
+        ("name==1.2.3.", ("name", "1.2.3.")), # New test case
     ],
 )
 def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> None:
