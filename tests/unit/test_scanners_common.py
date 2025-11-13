@@ -582,3 +582,29 @@ def test_read_go_mod_single_require(tmp_path: Path) -> None:
         "example.com/other/module": "v1.2.3",
     }
 
+def test_read_gemfile_lock(tmp_path: Path) -> None:
+    gemfile_lock = tmp_path / "Gemfile.lock"
+    gemfile_lock.write_text(
+        """
+        GEM
+          remote: https://rubygems.org/
+          specs:
+            name (1.2.3)
+            other (4.5.6)
+        """
+    )
+    dependencies = read_gemfile_lock(gemfile_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+    # Test case for line starting with a space
+    gemfile_lock.write_text(
+        """
+        GEM
+          remote: https://rubygems.org/
+          specs:
+             name (1.2.3)
+        """
+    )
+    dependencies = read_gemfile_lock(gemfile_lock)
+    assert dependencies == {"name": "1.2.3"}
+
