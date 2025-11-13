@@ -19,6 +19,8 @@ from rtx.scanners.common import (
     merge_dependency_version,
     normalize_version,
     load_json_dependencies,
+    load_lock_dependencies,
+    _normalize_lock_name,
     read_brewfile,
     read_cargo_lock,
     read_composer_lock,
@@ -178,6 +180,86 @@ def test_load_json_dependencies(tmp_path: Path) -> None:
     # Test case for a JSON file that is not a dictionary (e.g., a primitive value)
     (tmp_path / "primitive.json").write_text('"just_a_string"')
     assert load_json_dependencies(tmp_path / "primitive.json") == {}
+
+
+def test_load_lock_dependencies(tmp_path: Path) -> None:
+    # Test case for a lock file with "packages" key and valid metadata
+    (tmp_path / "lock1.json").write_text(
+        '''
+        {
+            "packages": {
+                "name": {"version": "1.2.3"},
+                "other": {"version": "4.5.6"}
+            }
+        }
+        '''
+    )
+    assert load_lock_dependencies(tmp_path / "lock1.json") == {"name": "1.2.3", "other": "4.5.6"}
+
+    # Test case for a lock file with "packages" key but empty
+    (tmp_path / "lock2.json").write_text(
+        '''
+        {
+            "packages": {}
+        }
+        '''
+    )
+    assert load_lock_dependencies(tmp_path / "lock2.json") == {}
+
+    # Test case for a lock file with "packages" key but non-dict metadata
+    (tmp_path / "lock3.json").write_text(
+        '''
+        {
+            "packages": {
+                "name": "1.2.3"
+            }
+        }
+        '''
+    )
+    assert load_lock_dependencies(tmp_path / "lock3.json") == {"name": "0.0.0"}
+
+    # Test case for a lock file with "dependencies" key and valid metadata
+    (tmp_path / "lock4.json").write_text(
+        '''
+        {
+            "dependencies": {
+                "name": {"version": "1.2.3"},
+                "other": {"version": "4.5.6"}
+            }
+        }
+        '''
+    )
+    assert load_lock_dependencies(tmp_path / "lock4.json") == {"name": "1.2.3", "other": "4.5.6"}
+
+    # Test case for a lock file with "dependencies" key but empty
+    (tmp_path / "lock5.json").write_text(
+        '''
+        {
+            "dependencies": {}
+        }
+        '''
+    )
+    assert load_lock_dependencies(tmp_path / "lock5.json") == {}
+
+    # Test case for a lock file with "dependencies" key but non-dict metadata
+    (tmp_path / "lock6.json").write_text(
+        '''
+        {
+            "dependencies": {
+                "name": "1.2.3"
+            }
+        }
+        '''
+    )
+    assert load_lock_dependencies(tmp_path / "lock6.json") == {}
+
+    # Test case for a lock file that is not a dictionary (e.g., a JSON array)
+    (tmp_path / "lock7.json").write_text('[1, 2, 3]')
+    assert load_lock_dependencies(tmp_path / "lock7.json") == {}
+
+    # Test case for a lock file that is a dictionary but contains neither "packages" nor "dependencies" keys
+    (tmp_path / "lock8.json").write_text('{"foo": "bar"}')
+    assert load_lock_dependencies(tmp_path / "lock8.json") == {}
 
 
 def test_read_requirements(tmp_path: Path) -> None:
