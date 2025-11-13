@@ -314,7 +314,19 @@ def _parse_pnpm_package_key(key: str) -> tuple[str | None, str | None]:
     base = trimmed.split("(", 1)[0]
     name: str | None
     version: str | None
-    if base.startswith("@"):
+    if "/" in base and "@" not in base:
+        parts = base.split("/")
+        if base.startswith("@"):
+            if len(parts) > 1:
+                name = f"{parts[0]}/{parts[1]}"
+                version = parts[2] if len(parts) > 2 else None
+            else:
+                name = base
+                version = None
+        else:
+            name = parts[0]
+            version = parts[1] if len(parts) > 1 else None
+    elif base.startswith("@"):
         index = base.rfind("@")
         if index <= 0:
             return None, None
