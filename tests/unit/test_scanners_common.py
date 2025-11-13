@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from rtx.scanners.common import _parse_requirement_line
+from rtx.scanners.common import _parse_conda_dependency, _parse_requirement_line
 
 
 @pytest.mark.parametrize(
@@ -23,3 +23,19 @@ from rtx.scanners.common import _parse_requirement_line
 )
 def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> None:
     assert _parse_requirement_line(line) == expected
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("", None),
+        ("# comment", None),
+        ("conda-forge::name", ("name", "*")),
+        ("conda-forge::name=1.2.3", ("name", "1.2.3")),
+        ("name=1.2.3", ("name", "1.2.3")),
+        ("name", ("name", "*")),
+        ("name 1.2.3", ("name", "1.2.3")),
+    ],
+)
+def test_parse_conda_dependency(line: str, expected: tuple[str, str] | None) -> None:
+    assert _parse_conda_dependency(line) == expected
