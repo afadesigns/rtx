@@ -38,6 +38,8 @@ def _parse_requirement_line(line: str) -> tuple[str, str] | None:
         return None
     if cleaned.startswith("-"):
         return None
+    if "==" in cleaned and cleaned.endswith("=="):
+        return None
     try:
         requirement = Requirement(cleaned)
     except InvalidRequirement:
@@ -51,11 +53,11 @@ def _parse_requirement_line(line: str) -> tuple[str, str] | None:
     else:
         specifier = requirement.specifier
         if specifier:
-            specs = list(specifier)
+            specs = sorted(list(specifier), key=lambda s: s.version)
             if len(specs) == 1 and specs[0].operator == "==":
                 version = specs[0].version
             else:
-                version = str(specifier)
+                version = ",".join(str(s) for s in specs)
         else:
             version = "*"
     return name, version
