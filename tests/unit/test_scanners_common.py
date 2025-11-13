@@ -519,11 +519,11 @@ def test_read_dockerfile_npm_scoped_package_with_version(tmp_path: Path) -> None
     dockerfile.write_text(
         """
         FROM node:16
-        RUN npm install @scope/pkg@1.2.3
+        RUN npm install @scope/pkg@1.2.3 @scope/pkg2
         """
     )
     dependencies = read_dockerfile(dockerfile)
-    assert dependencies == {"npm:@scope/pkg": "1.2.3"}
+    assert dependencies == {"npm:@scope/pkg": "1.2.3", "npm:@scope/pkg2": "*"}
 
 
 def test_read_dockerfile_npm_package_without_version(tmp_path: Path) -> None:
