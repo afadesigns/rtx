@@ -262,12 +262,26 @@ def test_load_lock_dependencies(tmp_path: Path) -> None:
     assert load_lock_dependencies(tmp_path / "lock8.json") == {}
 
 
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("name", "name"),
+        ("./name", "name"),
+        ("node_modules/name", "name"),
+        ("node_modules/@scope/name", "@scope/name"),
+    ],
+)
+def test_normalize_lock_name(name: str, expected: str) -> None:
+    assert _normalize_lock_name(name) == expected
+
+
 def test_read_requirements(tmp_path: Path) -> None:
     (tmp_path / "base.txt").write_text("name==1.2.3")
     (tmp_path / "constraints.txt").write_text("name==1.2.3\nother==4.5.6")
     (tmp_path / "requirements.txt").write_text("-r base.txt\n-c constraints.txt")
     requirements = read_requirements(tmp_path / "requirements.txt")
     assert requirements == {"name": "1.2.3", "other": "4.5.6"}
+
 
 def test_read_dockerfile(tmp_path: Path) -> None:
     dockerfile = tmp_path / "Dockerfile"
@@ -285,6 +299,7 @@ def test_read_dockerfile(tmp_path: Path) -> None:
         "npm:other": "4.5.6",
         "pypi:another": "7.8.9",
     }
+
 
 def test_read_go_mod(tmp_path: Path) -> None:
     go_mod = tmp_path / "go.mod"
@@ -304,6 +319,7 @@ def test_read_go_mod(tmp_path: Path) -> None:
         "example.com/another/module": "v4.5.6",
     }
 
+
 def test_read_brewfile(tmp_path: Path) -> None:
     brewfile = tmp_path / "Brewfile"
     brewfile.write_text(
@@ -314,6 +330,7 @@ def test_read_brewfile(tmp_path: Path) -> None:
     )
     dependencies = read_brewfile(brewfile)
     assert dependencies == {"name": "latest", "other": "1.2.3"}
+
 
 def test_read_gemfile_lock(tmp_path: Path) -> None:
     gemfile_lock = tmp_path / "Gemfile.lock"
@@ -329,6 +346,7 @@ def test_read_gemfile_lock(tmp_path: Path) -> None:
     dependencies = read_gemfile_lock(gemfile_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
 
+
 def test_read_cargo_lock(tmp_path: Path) -> None:
     cargo_lock = tmp_path / "Cargo.lock"
     cargo_lock.write_text(
@@ -343,6 +361,7 @@ def test_read_cargo_lock(tmp_path: Path) -> None:
     )
     dependencies = read_cargo_lock(cargo_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
 
 def test_read_composer_lock(tmp_path: Path) -> None:
     composer_lock = tmp_path / "composer.lock"
@@ -364,6 +383,7 @@ def test_read_composer_lock(tmp_path: Path) -> None:
     )
     dependencies = read_composer_lock(composer_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
 
 def test_read_maven_pom(tmp_path: Path) -> None:
     pom_xml = tmp_path / "pom.xml"
@@ -388,6 +408,7 @@ def test_read_maven_pom(tmp_path: Path) -> None:
     dependencies = read_maven_pom(pom_xml)
     assert dependencies == {"group:name": "1.2.3", "group:other": "4.5.6"}
 
+
 def test_read_environment_yml(tmp_path: Path) -> None:
     environment_yml = tmp_path / "environment.yml"
     environment_yml.write_text(
@@ -401,6 +422,7 @@ def test_read_environment_yml(tmp_path: Path) -> None:
     )
     dependencies = read_environment_yml(environment_yml)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6", "pip-name": "7.8.9"}
+
 
 def test_read_packages_lock(tmp_path: Path) -> None:
     packages_lock = tmp_path / "packages.lock.json"
@@ -421,6 +443,7 @@ def test_read_packages_lock(tmp_path: Path) -> None:
     dependencies = read_packages_lock(packages_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
 
+
 def test_read_poetry_lock(tmp_path: Path) -> None:
     poetry_lock = tmp_path / "poetry.lock"
     poetry_lock.write_text(
@@ -435,6 +458,7 @@ def test_read_poetry_lock(tmp_path: Path) -> None:
     )
     dependencies = read_poetry_lock(poetry_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
 
 def test_read_uv_lock(tmp_path: Path) -> None:
     uv_lock = tmp_path / "uv.lock"
@@ -453,6 +477,7 @@ def test_read_uv_lock(tmp_path: Path) -> None:
     )
     dependencies = read_uv_lock(uv_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
 
 def test_read_pnpm_lock(tmp_path: Path) -> None:
     pnpm_lock = tmp_path / "pnpm-lock.yaml"
