@@ -56,3 +56,4 @@ bin/
 # Reports
 reports/
 artifacts/
+src/rtx/scanners/common.py,cover
