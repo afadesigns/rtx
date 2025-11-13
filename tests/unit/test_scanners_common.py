@@ -10,6 +10,7 @@ from rtx.scanners.common import (
     merge_dependency_version,
     read_brewfile,
     read_dockerfile,
+    read_gemfile_lock,
     read_go_mod,
     read_requirements,
 )
@@ -35,7 +36,7 @@ def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> 
     assert _parse_requirement_line(line) == expected
 
 
-@pytest.mark.parametrize(
+@pytest.pytest.mark.parametrize(
     ("line", "expected"),
     [
         ("", None),
@@ -116,3 +117,17 @@ def test_read_brewfile(tmp_path: Path) -> None:
         """)
     dependencies = read_brewfile(brewfile)
     assert dependencies == {"name": "latest", "other": "1.2.3"}
+
+
+def test_read_gemfile_lock(tmp_path: Path) -> None:
+    gemfile_lock = tmp_path / "Gemfile.lock"
+    gemfile_lock.write_text(
+        """
+        GEM
+          remote: https://rubygems.org/
+          specs:
+            name (1.2.3)
+            other (4.5.6)
+        """)
+    dependencies = read_gemfile_lock(gemfile_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
