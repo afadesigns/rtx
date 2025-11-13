@@ -3,7 +3,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from rtx.scanners.npm import NpmScanner
+from rtx.scanners.npm import NpmScanner, _normalize_npm_version
 
 
 def test_npm_scanner_reads_pnpm_lock(tmp_path: Path) -> None:
@@ -58,3 +58,12 @@ def test_npm_scanner_reads_yarn_lock(tmp_path: Path) -> None:
     packages = scanner.scan(project)
     assert packages[0].name == "react"
     assert packages[0].version == "18.2.0"
+
+
+def test_normalize_npm_version() -> None:
+    assert _normalize_npm_version("^1.2.3") == "1.2.3"
+    assert _normalize_npm_version("~1.2.3") == "1.2.3"
+    assert _normalize_npm_version(">=1.2.3") == ">=1.2.3"
+    assert _normalize_npm_version("=1.2.3") == "1.2.3"
+    assert _normalize_npm_version("https://example.com/package.tgz") == "@ https://example.com/package.tgz"
+    assert _normalize_npm_version("git+https://github.com/user/repo.git") == "@ git+https://github.com/user/repo.git"
