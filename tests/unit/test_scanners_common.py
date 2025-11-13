@@ -14,6 +14,8 @@ from rtx.scanners.common import (
     _parse_requirement_line,
     _pip_install_start,
     _specificity_rank,
+    _is_more_specific,
+    _normalize_specifier,
     merge_dependency_version,
     read_brewfile,
     read_cargo_lock,
@@ -46,7 +48,7 @@ from rtx.scanners.common import (
         ("name>=1.2.3", ("name", ">=1.2.3")),
         ("name<2.0.0,>=1.2.3", ("name", ">=1.2.3,<2.0.0")),
         ("invalid-package-name>", None),
-        ("name==1.2.3.", ("name", "1.2.3.")), # New test case
+        ("name==1.2.3.", ("name", "1.2.3.")),
     ],
 )
 def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> None:
@@ -96,6 +98,33 @@ def test_merge_dependency_version() -> None:
     store = {"name": "1.0.0"}
     assert merge_dependency_version(store, "name", "*") is False
     assert store["name"] == "1.0.0"
+
+    # New test case: candidate is more specific than existing (e.g., existing >1.0.0, candidate ==2.0.0)
+    store = {"name": ">1.0.0"}
+    assert merge_dependency_version(store, "name", "==2.0.0") is True
+    assert store["name"] == "==2.0.0"
+
+
+def test_is_more_specific() -> None:
+    assert _is_more_specific("==2.0.0", ">1.0.0") is True
+    assert _is_more_specific(">1.0.0", "==2.0.0") is False
+    assert _is_more_specific("1.0.0", "*") is True
+    assert _is_more_specific("*", "1.0.0") is False
+    assert _is_more_specific("==1.0.0", "==1.0.0") is False
+
+
+@pytest.mark.parametrize(
+    ("specifier", "expected"),
+    [
+        (None, "*"),
+        ("", "*"),
+        ("   ", "*"),
+        ("1.2.3", "1.2.3"),
+        ("==1.2.3", "==1.2.3"),
+    ],
+)
+def test_normalize_specifier(specifier: str | None, expected: str) -> None:
+    assert _normalize_specifier(specifier) == expected
 
 
 def test_read_requirements(tmp_path: Path) -> None:
