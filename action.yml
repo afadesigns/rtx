@@ -1,0 +1,47 @@
+name: 'rtx - Real Tracker X'
+description: 'Cross-ecosystem dependency trust scanner for secure upgrades.'
+author: 'Andreas Fahl'
+
+inputs:
+  command:
+    description: 'The rtx command to run (scan, pre-upgrade, report, etc.)'
+    required: false
+    default: 'scan'
+  path:
+    description: 'The path to the directory to scan.'
+    required: false
+    default: '.'
+  format:
+    description: 'The output format for the report (table, json, html).'
+    required: false
+    default: 'table'
+  output:
+    description: 'The file path to save the report to.'
+    required: false
+  github_token:
+    description: 'GitHub token for accessing advisories.'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install rtx
+      shell: bash
+      run: pip install rtx-trust
+
+    - name: Run rtx
+      shell: bash
+      run: |
+        rtx_args="${{ inputs.command }} --path ${{ inputs.path }} --format ${{ inputs.format }}"
+        if [[ -n "${{ inputs.output }}" ]]; then
+          rtx_args="$rtx_args --output ${{ inputs.output }}"
+        fi
+        
+        echo "Running: rtx $rtx_args"
+        
+        GITHUB_TOKEN=${{ inputs.github_token }} rtx $rtx_args
