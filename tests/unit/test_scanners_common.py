@@ -8,6 +8,7 @@ from rtx.scanners.common import (
     _parse_conda_dependency,
     _parse_requirement_line,
     merge_dependency_version,
+    read_brewfile,
     read_dockerfile,
     read_go_mod,
     read_requirements,
@@ -79,8 +80,7 @@ def test_read_dockerfile(tmp_path: Path) -> None:
         RUN pip install name==1.2.3
         RUN npm install other@4.5.6 && \
             pip install another==7.8.9
-        """
-    )
+        """)
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {
         "pypi:name": "1.2.3",
@@ -99,10 +99,20 @@ def test_read_go_mod(tmp_path: Path) -> None:
             example.com/other/module v1.2.3
             example.com/another/module v4.5.6
         )
-        """
-    )
+        """)
     dependencies = read_go_mod(go_mod)
     assert dependencies == {
         "example.com/other/module": "v1.2.3",
         "example.com/another/module": "v4.5.6",
     }
+
+
+def test_read_brewfile(tmp_path: Path) -> None:
+    brewfile = tmp_path / "Brewfile"
+    brewfile.write_text(
+        """
+        brew "name"
+        brew "other", version: "1.2.3"
+        """)
+    dependencies = read_brewfile(brewfile)
+    assert dependencies == {"name": "latest", "other": "1.2.3"}
