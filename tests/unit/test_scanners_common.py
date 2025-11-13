@@ -65,6 +65,10 @@ def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> 
         ("name=1.2.3", ("name", "1.2.3")),
         ("name", ("name", "*")),
         ("name 1.2.3", ("name", "1.2.3")),
+        ("name @ https://example.com/pkg.zip", ("name", "@ https://example.com/pkg.zip")),
+        ("name>=1.0.0", ("name", ">=1.0.0")),
+        ("name=", ("name", "*")),
+        ("   ", None),
     ],
 )
 def test_parse_conda_dependency(line: str, expected: tuple[str, str] | None) -> None:
