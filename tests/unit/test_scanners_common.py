@@ -109,6 +109,11 @@ def test_merge_dependency_version() -> None:
     assert merge_dependency_version(store, "name", "1.2.3") is True
     assert store["name"] == "1.2.3"
 
+    # New test case: normalized_candidate == normalized_existing
+    store = {"name": "==1.2.3"}
+    assert merge_dependency_version(store, "name", "==1.2.3") is False
+    assert store["name"] == "==1.2.3"
+
 
 def test_is_more_specific() -> None:
     assert _is_more_specific("==2.0.0", ">1.0.0") is True
