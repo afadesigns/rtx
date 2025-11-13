@@ -9,9 +9,14 @@ from rtx.scanners.common import (
     _parse_requirement_line,
     merge_dependency_version,
     read_brewfile,
+    read_cargo_lock,
+    read_composer_lock,
     read_dockerfile,
+    read_environment_yml,
     read_gemfile_lock,
     read_go_mod,
+    read_maven_pom,
+    read_packages_lock,
     read_requirements,
 )
 
@@ -36,7 +41,7 @@ def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> 
     assert _parse_requirement_line(line) == expected
 
 
-@pytest.pytest.mark.parametrize(
+@pytest.mark.parametrize(
     ("line", "expected"),
     [
         ("", None),
@@ -81,7 +86,8 @@ def test_read_dockerfile(tmp_path: Path) -> None:
         RUN pip install name==1.2.3
         RUN npm install other@4.5.6 && \
             pip install another==7.8.9
-        """)
+        """
+    )
     dependencies = read_dockerfile(dockerfile)
     assert dependencies == {
         "pypi:name": "1.2.3",
@@ -100,7 +106,8 @@ def test_read_go_mod(tmp_path: Path) -> None:
             example.com/other/module v1.2.3
             example.com/another/module v4.5.6
         )
-        """)
+        """
+    )
     dependencies = read_go_mod(go_mod)
     assert dependencies == {
         "example.com/other/module": "v1.2.3",
@@ -114,7 +121,8 @@ def test_read_brewfile(tmp_path: Path) -> None:
         """
         brew "name"
         brew "other", version: "1.2.3"
-        """)
+        """
+    )
     dependencies = read_brewfile(brewfile)
     assert dependencies == {"name": "latest", "other": "1.2.3"}
 
@@ -128,6 +136,104 @@ def test_read_gemfile_lock(tmp_path: Path) -> None:
           specs:
             name (1.2.3)
             other (4.5.6)
-        """)
+        """
+    )
     dependencies = read_gemfile_lock(gemfile_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+
+def test_read_cargo_lock(tmp_path: Path) -> None:
+    cargo_lock = tmp_path / "Cargo.lock"
+    cargo_lock.write_text(
+        """
+        [[package]]
+        name = "name"
+        version = "1.2.3"
+        [[package]]
+        name = "other"
+        version = "4.5.6"
+        """
+    )
+    dependencies = read_cargo_lock(cargo_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+
+def test_read_composer_lock(tmp_path: Path) -> None:
+    composer_lock = tmp_path / "composer.lock"
+    composer_lock.write_text(
+        """
+        {
+            "packages": [
+                {
+                    "name": "name",
+                    "version": "1.2.3"
+                },
+                {
+                    "name": "other",
+                    "version": "4.5.6"
+                }
+            ]
+        }
+        """
+    )
+    dependencies = read_composer_lock(composer_lock)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
+
+
+def test_read_maven_pom(tmp_path: Path) -> None:
+    pom_xml = tmp_path / "pom.xml"
+    pom_xml.write_text(
+        """
+        <project>
+            <dependencies>
+                <dependency>
+                    <groupId>group</groupId>
+                    <artifactId>name</artifactId>
+                    <version>1.2.3</version>
+                </dependency>
+                <dependency>
+                    <groupId>group</groupId>
+                    <artifactId>other</artifactId>
+                    <version>4.5.6</version>
+                </dependency>
+            </dependencies>
+        </project>
+        """
+    )
+    dependencies = read_maven_pom(pom_xml)
+    assert dependencies == {"group:name": "1.2.3", "group:other": "4.5.6"}
+
+
+def test_read_environment_yml(tmp_path: Path) -> None:
+    environment_yml = tmp_path / "environment.yml"
+    environment_yml.write_text(
+        """
+        dependencies:
+          - conda-forge::name=1.2.3
+          - other==4.5.6
+          - pip:
+            - pip-name==7.8.9
+        """
+    )
+    dependencies = read_environment_yml(environment_yml)
+    assert dependencies == {"name": "1.2.3", "other": "4.5.6", "pip-name": "7.8.9"}
+
+
+def test_read_packages_lock(tmp_path: Path) -> None:
+    packages_lock = tmp_path / "packages.lock.json"
+    packages_lock.write_text(
+        """
+        {
+            "dependencies": {
+                "name": {
+                    "version": "1.2.3"
+                },
+                "other": {
+                    "resolved": "4.5.6"
+                }
+            }
+        }
+        """
+    )
+    dependencies = read_packages_lock(packages_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
