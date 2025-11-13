@@ -53,6 +53,7 @@ from rtx.scanners.common import (
         ("name<2.0.0,>=1.2.3", ("name", ">=1.2.3,<2.0.0")),
         ("invalid-package-name>", None),
         ("name==1.2.3.", ("name", "1.2.3.")),
+        ("==1.2.3", None),
     ],
 )
 def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> None:
@@ -358,7 +359,7 @@ def test_read_uv_lock_direct_names_virtual_source(tmp_path: Path) -> None:
         version = 1
 
         [[package]]
-        name = "dep1"
+        name = "transitive-dep"
         version = "1.0.0"
         source = { virtual = "." }
         dependencies = [ { name = "transitive-dep" } ]
@@ -368,7 +369,7 @@ def test_read_uv_lock_direct_names_virtual_source(tmp_path: Path) -> None:
         version = "2.0.0"
         '''
     )
-    assert read_uv_lock(tmp_path / "virtual_source.lock") == {"transitive-dep": "*"}
+    assert read_uv_lock(tmp_path / "virtual_source.lock") == {"transitive-dep": "1.0.0"}
 
 
 def test_read_uv_lock_direct_names_project_dependencies(tmp_path: Path) -> None:
@@ -437,6 +438,24 @@ def test_read_requirements(tmp_path: Path) -> None:
     (tmp_path / "requirements.txt").write_text("-r base.txt\n-c constraints.txt")
     requirements = read_requirements(tmp_path / "requirements.txt")
     assert requirements == {"name": "1.2.3", "other": "4.5.6"}
+
+    # Test case for absolute_path in _seen (lines 346-347)
+    (tmp_path / "seen.txt").write_text("seen-name==1.0.0")
+    seen_path = tmp_path / "seen.txt"
+    _seen_set = {seen_path.resolve()}
+    assert read_requirements(seen_path, _seen=_seen_set) == {}
+
+    # Test case for empty or comment-only line (lines 354-355)
+    (tmp_path / "empty_comment.txt").write_text("# comment\n\nname==1.0.0")
+    assert read_requirements(tmp_path / "empty_comment.txt") == {"name": "1.0.0"}
+
+    # Test case for ValueError in shlex.split (lines 361-362)
+    (tmp_path / "shlex_error.txt").write_text("name==1.0.0 \"unclosed_quote")
+    assert read_requirements(tmp_path / "shlex_error.txt") == {}
+
+    # Test case for not candidate.exists() (lines 369-370)
+    (tmp_path / "non_existent_include.txt").write_text("-r non_existent.txt\nname==1.0.0")
+    assert read_requirements(tmp_path / "non_existent_include.txt") == {"name": "1.0.0"}
 
 
 def test_read_dockerfile(tmp_path: Path) -> None:

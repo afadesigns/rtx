@@ -45,9 +45,13 @@ def _parse_requirement_line(line: str) -> tuple[str, str] | None:
     except InvalidRequirement:
         if "==" in cleaned:
             name, version = cleaned.split("==", 1)
+            if not name.strip():
+                return None
             return name.strip(), version.strip() or "*"
         return None
     name = requirement.name
+    if not name.strip():
+        return None
     if requirement.url:
         version = f"@ {requirement.url}"
     else:
