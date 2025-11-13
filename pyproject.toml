@@ -97,6 +97,11 @@ minversion = "8.0"
 addopts = "-q --cov=rtx --cov-report=term-missing"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore:.*iscoroutinefunction.*:DeprecationWarning",
+    "ignore:.*get_event_loop_policy.*:DeprecationWarning",
+    "ignore:.*set_event_loop_policy.*:DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true
