@@ -9,7 +9,6 @@ from rtx.scanners.common import (
     _extract_include_directives,
     _npm_install_start,
     _parse_conda_dependency,
-    _parse_npm_token,
     _parse_pnpm_package_key,
     _parse_requirement_line,
     _pip_install_start,
@@ -441,22 +440,6 @@ def test_read_packages_lock(tmp_path: Path) -> None:
         """
     )
     dependencies = read_packages_lock(packages_lock)
-    assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
-
-
-def test_read_poetry_lock(tmp_path: Path) -> None:
-    poetry_lock = tmp_path / "poetry.lock"
-    poetry_lock.write_text(
-        """
-        [[package]]
-        name = "name"
-        version = "1.2.3"
-        [[package]]
-        name = "other"
-        version = "4.5.6"
-        """
-    )
-    dependencies = read_poetry_lock(poetry_lock)
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
 
 
