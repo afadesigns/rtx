@@ -351,6 +351,86 @@ def test_read_uv_lock_initial_parsing(tmp_path: Path) -> None:
     assert read_uv_lock(tmp_path / "non_dict_package.lock") == {}
 
 
+def test_read_uv_lock_direct_names_virtual_source(tmp_path: Path) -> None:
+    # Test case for direct_names population when source.get("virtual") == "."
+    (tmp_path / "virtual_source.lock").write_text(
+        '''
+        version = 1
+
+        [[package]]
+        name = "dep1"
+        version = "1.0.0"
+        source = { virtual = "." }
+        dependencies = [ { name = "transitive-dep" } ]
+
+        [[package]]
+        name = "dep2"
+        version = "2.0.0"
+        '''
+    )
+    assert read_uv_lock(tmp_path / "virtual_source.lock") == {"transitive-dep": "*"}
+
+
+def test_read_uv_lock_direct_names_project_dependencies(tmp_path: Path) -> None:
+    # Test case for direct_names population when not direct_names and project dependencies exist
+    (tmp_path / "project_deps.lock").write_text(
+        '''
+        version = 1
+
+        [project]
+        dependencies = ["project-dep1==1.0.0", "project-dep2"]
+
+        [[package]]
+        name = "project-dep1"
+        version = "1.0.0"
+
+        [[package]]
+        name = "project-dep2"
+        version = "2.0.0"
+        '''
+    )
+    assert read_uv_lock(tmp_path / "project_deps.lock") == {"project-dep1": "1.0.0", "project-dep2": "2.0.0"}
+
+
+def test_read_uv_lock_direct_names_dependency_groups(tmp_path: Path) -> None:
+    # Test case for direct_names population when not direct_names and dependency_groups exist
+    (tmp_path / "group_deps.lock").write_text(
+        '''
+        version = 1
+
+        [dependency-groups.dev]
+        dependencies = ["dev-dep1==1.0.0", "dev-dep2"]
+
+        [[package]]
+        name = "dev-dep1"
+        version = "1.0.0"
+
+        [[package]]
+        name = "dev-dep2"
+        version = "2.0.0"
+        '''
+    )
+    assert read_uv_lock(tmp_path / "group_deps.lock") == {"dev-dep1": "1.0.0", "dev-dep2": "2.0.0"}
+
+
+def test_read_uv_lock_no_direct_names_fallback(tmp_path: Path) -> None:
+    # Test case for results population when no direct_names are found, falling back to all packages
+    (tmp_path / "fallback.lock").write_text(
+        '''
+        version = 1
+
+        [[package]]
+        name = "fallback-name1"
+        version = "1.0.0"
+
+        [[package]]
+        name = "fallback-name2"
+        version = "2.0.0"
+        '''
+    )
+    assert read_uv_lock(tmp_path / "fallback.lock") == {"fallback-name1": "1.0.0", "fallback-name2": "2.0.0"}
+
+
 def test_read_requirements(tmp_path: Path) -> None:
     (tmp_path / "base.txt").write_text("name==1.2.3")
     (tmp_path / "constraints.txt").write_text("name==1.2.3\nother==4.5.6")
