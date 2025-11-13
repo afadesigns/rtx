@@ -148,6 +148,7 @@ def test_normalize_specifier(specifier: str | None, expected: str) -> None:
         ("   ", "0.0.0"),
         ("1.2.3", "1.2.3"),
         ("invalid-version", "invalid-version"),
+        (None, "0.0.0"),
     ],
 )
 def test_normalize_version(raw_version: str, expected: str) -> None:

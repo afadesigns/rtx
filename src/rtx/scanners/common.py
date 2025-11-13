@@ -171,7 +171,9 @@ def _parse_conda_dependency(entry: str) -> tuple[str, str] | None:
     return name, version or "*"
 
 
-def normalize_version(raw: str) -> str:
+def normalize_version(raw: str | None) -> str:
+    if not raw:
+        return "0.0.0"
     raw = raw.strip()
     if not raw:
         return "0.0.0"
