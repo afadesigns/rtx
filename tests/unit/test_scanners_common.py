@@ -597,7 +597,8 @@ def test_read_gemfile_lock(tmp_path: Path) -> None:
     assert dependencies == {"name": "1.2.3", "other": "4.5.6"}
 
     # Test case for line starting with a space
-    gemfile_lock.write_text(
+    gemfile_lock_space = tmp_path / "Gemfile.lock_space"
+    gemfile_lock_space.write_text(
         """
         GEM
           remote: https://rubygems.org/
@@ -605,6 +606,6 @@ def test_read_gemfile_lock(tmp_path: Path) -> None:
              name (1.2.3)
         """
     )
-    dependencies = read_gemfile_lock(gemfile_lock)
+    dependencies = read_gemfile_lock(gemfile_lock_space)
     assert dependencies == {"name": "1.2.3"}
 
