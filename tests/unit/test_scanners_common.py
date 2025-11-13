@@ -115,6 +115,12 @@ def test_merge_dependency_version() -> None:
     assert store["name"] == "==1.2.3"
 
 
+def test_merge_dependency_version_unspecific_to_specific() -> None:
+    store = {"name": ""}
+    assert merge_dependency_version(store, "name", "1.2.3") is True
+    assert store["name"] == "1.2.3"
+
+
 def test_is_more_specific() -> None:
     assert _is_more_specific("==2.0.0", ">1.0.0") is True
     assert _is_more_specific(">1.0.0", "==2.0.0") is False

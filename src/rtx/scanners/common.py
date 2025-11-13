@@ -124,10 +124,6 @@ def merge_dependency_version(store: dict[str, str], name: str, candidate: str) -
     if _is_more_specific(normalized_existing, normalized_candidate):
         return False
 
-    if normalized_existing in {"*", ""} and normalized_candidate not in {"*", ""}:
-        store[name] = normalized_candidate
-        return True
-
     return False
 
 
