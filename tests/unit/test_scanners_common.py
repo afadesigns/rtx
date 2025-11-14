@@ -468,6 +468,16 @@ def test_read_uv_lock_direct_names_dependency_groups(tmp_path: Path) -> None:
     )
     assert read_uv_lock(tmp_path / "not_a_dict_group.lock") == {}
 
+    # Test case for a uv.lock file where the "dependencies" key is not a list
+    (tmp_path / "not_a_list_group_dependencies.lock").write_text(
+        """
+        version = 1
+        [dependency-groups.dev]
+        dependencies = "just_a_string"
+        """
+    )
+    assert read_uv_lock(tmp_path / "not_a_list_group_dependencies.lock") == {}
+
 
 def test_read_uv_lock_no_direct_names_fallback(tmp_path: Path) -> None:
     # Test case for results population when no direct_names are found, falling back to all packages
