@@ -284,7 +284,7 @@ class TestMetadataClient:
 
 
 
-            async def test_fetch_crates(self, httpx_mock) -> None:
+                async def test_fetch_crates(self, httpx_mock) -> None:
 
 
 
@@ -292,7 +292,7 @@ class TestMetadataClient:
 
 
 
-                httpx_mock.add_response(
+        
 
 
 
@@ -300,7 +300,7 @@ class TestMetadataClient:
 
 
 
-                    url="https://crates.io/api/v1/crates/name",
+                    httpx_mock.add_response(
 
 
 
@@ -308,7 +308,7 @@ class TestMetadataClient:
 
 
 
-                    json={
+        
 
 
 
@@ -316,7 +316,7 @@ class TestMetadataClient:
 
 
 
-                        "crate": {"updated_at": "2023-01-01T12:34:56.123Z"},
+                        url="https://crates.io/api/v1/crates/name",
 
 
 
@@ -324,7 +324,7 @@ class TestMetadataClient:
 
 
 
-                        "versions": [{"created_at": "2023-01-01T12:34:56.123Z"}],
+        
 
 
 
@@ -332,7 +332,7 @@ class TestMetadataClient:
 
 
 
-                        "teams": [{"login": "author"}],
+                        json={
 
 
 
@@ -340,7 +340,7 @@ class TestMetadataClient:
 
 
 
-                    },
+        
 
 
 
@@ -348,7 +348,7 @@ class TestMetadataClient:
 
 
 
-                )
+                            "crate": {"updated_at": "2023-01-01T12:34:56.123Z"},
 
 
 
@@ -356,7 +356,7 @@ class TestMetadataClient:
 
 
 
-                client = MetadataClient()
+        
 
 
 
@@ -364,7 +364,7 @@ class TestMetadataClient:
 
 
 
-                dependency = Dependency("crates", "name", "1.0", True, "manifest")
+                            "versions": [{"created_at": "2023-01-01T12:34:56.123Z"}],
 
 
 
@@ -372,7 +372,7 @@ class TestMetadataClient:
 
 
 
-                metadata = await client._fetch_crates(dependency)
+        
 
 
 
@@ -380,7 +380,7 @@ class TestMetadataClient:
 
 
 
-                assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+                            "teams": [{"login": "author"}],
 
 
 
@@ -388,7 +388,7 @@ class TestMetadataClient:
 
 
 
-                assert metadata.total_releases == 1
+        
 
 
 
@@ -396,7 +396,391 @@ class TestMetadataClient:
 
 
 
-                assert metadata.maintainers == ["author"]
+                        },
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    )
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    client = MetadataClient()
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    dependency = Dependency("crates", "name", "1.0", True, "manifest")
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    metadata = await client._fetch_crates(dependency)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    assert metadata.total_releases == 1
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    assert metadata.maintainers == ["author"]
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                async def test_fetch_gomod(self, httpx_mock) -> None:
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    httpx_mock.add_response(
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        url="https://proxy.golang.org/name/@v/list",
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        text="v1.0.0",
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    )
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    httpx_mock.add_response(
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        url="https://proxy.golang.org/name/@v/v1.0.0.info",
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        json={"Time": "2023-01-01T12:34:56.123Z"},
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    )
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    client = MetadataClient()
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    dependency = Dependency("go", "name", "1.0", True, "manifest")
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    metadata = await client._fetch_gomod(dependency)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    assert metadata.total_releases == 1
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    assert metadata.maintainers == []
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
 
 
 
