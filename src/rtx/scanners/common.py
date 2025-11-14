@@ -567,29 +567,29 @@ def read_maven_pom(path: Path) -> dict[str, str]:
 def read_go_mod(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     lines = path.read_text(encoding="utf-8").splitlines()
-    in_block = False
+    in_require_block = False
     for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith(("module", "//", "replace", "go")):
             continue
+
         if line.startswith("require ("):
-            in_block = True
+            in_require_block = True
             continue
-        if in_block and line.startswith(")"):
-            in_block = False
+        if in_require_block and line.startswith(")"):
+            in_require_block = False
             continue
-        if line.startswith("require") and not line.endswith("("):
-            parts = line.split()
+
+        parts = line.split()
+        if not parts:
+            continue
+
+        if in_require_block:
+            if len(parts) >= 2:
+                out[parts[0]] = parts[1]
+        elif parts[0] == "require":
             if len(parts) >= 3:
-                _, module, version = parts[:3]
-                out[module] = version
-            continue
-        if in_block and " " in line:
-            module, version = line.split()[:2]
-            out[module] = version
-        elif " " in line:
-            module, version = line.split()[:2]
-            out[module] = version
+                out[parts[1]] = parts[2]
     return out
 
 
