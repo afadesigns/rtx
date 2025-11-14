@@ -14,23 +14,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@08eba0b
+        uses: actions/checkout@v4.1.7
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: "3.11"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip build
           pip install --require-hashes -r requirements.lock
+
       - name: Build distributions
         run: python -m build --sdist --wheel --outdir dist
+
       - name: Generate SBOM
         run: python -m rtx.sbom_cli --output dist/rtx-sbom.json
+
       - name: Install cosign
-        uses: sigstore/cosign-installer@7e8b541
+        uses: sigstore/cosign-installer@v3.5.0
         with:
           cosign-release: v2.2.3
+
       - name: Sign artifacts
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -38,16 +44,19 @@ jobs:
           for file in dist/*.{whl,gz,json}; do
             cosign sign-blob --yes "$file" --output-signature "$file.sig"
           done
+
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.12
+        uses: pypa/gh-action-pypi-publish@v1.9.0
         with:
           skip-existing: true
+
       - name: Generate SLSA provenance
         uses: slsa-framework/slsa-github-generator@v1.10.0
         with:
           attestation_subject_path: "dist/*.whl"
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1.1.14
+        uses: softprops/action-gh-release@v2.0.6
         with:
           files: |
             dist/*.whl
