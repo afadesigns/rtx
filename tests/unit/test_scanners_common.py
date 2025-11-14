@@ -693,6 +693,21 @@ def test_read_go_mod_single_require(tmp_path: Path) -> None:
     dependencies = read_go_mod(go_mod)
     assert dependencies == {}
 
+    # Test case for require block
+    go_mod.write_text(
+        """
+        module example.com/my/module
+        go 1.18
+        require (
+            example.com/other/module v1.2.3
+        )
+        """
+    )
+    dependencies = read_go_mod(go_mod)
+    assert dependencies == {
+        "example.com/other/module": "v1.2.3",
+    }
+
 
 def test_read_gemfile_lock(tmp_path: Path) -> None:
     gemfile_lock = tmp_path / "Gemfile.lock"
