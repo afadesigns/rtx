@@ -366,6 +366,15 @@ def test_read_uv_lock_initial_parsing(tmp_path: Path) -> None:
     )
     assert read_uv_lock(tmp_path / "non_dict_package.lock") == {}
 
+    # Test case for a uv.lock file where the "package" key is not a list
+    (tmp_path / "not_a_list.lock").write_text(
+        """
+        version = 1
+        package = "just_a_string"
+        """
+    )
+    assert read_uv_lock(tmp_path / "not_a_list.lock") == {}
+
 
 def test_read_uv_lock_direct_names_virtual_source(tmp_path: Path) -> None:
     # Test case for direct_names population when source.get("virtual") == "."
