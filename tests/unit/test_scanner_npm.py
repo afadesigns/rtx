@@ -23,7 +23,9 @@ def test_npm_scanner_reads_pnpm_lock(tmp_path: Path) -> None:
             packages:
 
               /react/18.2.0:
-                resolution: {integrity: sha512-6O2acGY1YLSsmdlL1BcLqrNfbSbEffjIzjOBqAZFt4+TRXMDR9E1fCaeOCfCUDKTgoOFJdvrPaBJayEagAA7oA==}
+                resolution: {
+                integrity: sha512-6O2acGY1YLSsmdlL1BcLqrNfbSbEffjIzjOBqAZFt4+TRXMDR9E1fCaeOCfCUDKTgoOFJdvrPaBJayEagAA7oA==
+                }
                 engines: {node: '>=0.10.0'}
                 dev: false
             """
@@ -49,7 +51,8 @@ def test_npm_scanner_reads_yarn_lock(tmp_path: Path) -> None:
             react@^18.2.0:
               version "18.2.0"
               resolved "https://registry.yarnpkg.com/react/-/react-18.2.0.tgz#6b07a9b2c3a3b4d7b9d7b7b7b7b7b7b7b7b7b7b7"
-              integrity sha512-6O2acGY1YLSsmdlL1BcLqrNfbSbEffjIzjOBqAZFt4+TRXMDR9E1fCaeOCfCUDKTgoOFJdvrPaBJayEagAA7oA==
+              integrity: >
+                sha512-6O2acGY1YLSsmdlL1BcLqrNfbSbEffjIzjOBqAZFt4+TRXMDR9E1fCaeOCfCUDKTgoOFJdvrPaBJayEagAA7oA==
             '''
         ),
         encoding="utf-8",
