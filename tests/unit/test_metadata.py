@@ -16,25 +16,73 @@ from rtx.utils import utc_now
 
 class TestMetadataClient:
 
+
+
+
+
     async def test_context_management(self) -> None:
+
+
+
+
 
         async with MetadataClient() as client:
 
+
+
+
+
             assert not client._client.is_closed
+
+
+
+
 
         assert client._client.is_closed
 
 
 
+
+
+
+
+
+
+
+
     async def test_clear_cache(self) -> None:
+
+
+
+
 
         client = MetadataClient()
 
+
+
+
+
         client._cache["key"] = ReleaseMetadata(None, 0, 0, [], "")
+
+
+
+
 
         await client.clear_cache()
 
+
+
+
+
         assert not client._cache
+
+
+
+
+
+
+
+
 
 
 
@@ -42,27 +90,99 @@ class TestMetadataClient:
 
 
 
-            client = MetadataClient()
+
+
+        client = MetadataClient()
 
 
 
-            dependency = Dependency("pypi", "name", "1.0", True, "manifest")
+
+
+        dependency = Dependency("pypi", "name", "1.0", True, "manifest")
 
 
 
-            key = client._cache_key(dependency)
+
+
+        key = client._cache_key(dependency)
 
 
 
-            metadata = ReleaseMetadata(None, 0, 0, [], "pypi")
+
+
+        metadata = ReleaseMetadata(None, 0, 0, [], "pypi")
 
 
 
-            client._cache[key] = metadata
+
+
+        client._cache[key] = metadata
 
 
 
-            assert await client.fetch(dependency) is metadata
+
+
+        assert await client.fetch(dependency) is metadata
+
+
+
+
+
+
+
+
+
+
+
+    async def test_fetch_uncached_unknown_ecosystem(self) -> None:
+
+
+
+
+
+        client = MetadataClient()
+
+
+
+
+
+        dependency = Dependency("unknown", "name", "1.0", True, "manifest")
+
+
+
+
+
+        metadata = await client._fetch_uncached(dependency)
+
+
+
+
+
+        assert metadata.latest_release is None
+
+
+
+
+
+        assert metadata.releases_last_30d == 0
+
+
+
+
+
+        assert metadata.total_releases == 0
+
+
+
+
+
+        assert metadata.maintainers == []
+
+
+
+
+
+
 
 
 
