@@ -4,9 +4,35 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from rtx.metadata import _parse_date, _dedupe_names, ReleaseMetadata
+from rtx.metadata import _parse_date, _dedupe_names, ReleaseMetadata, MetadataClient
 
 from rtx.utils import utc_now
+
+
+
+
+
+class TestMetadataClient:
+
+    async def test_context_management(self) -> None:
+
+        async with MetadataClient() as client:
+
+            assert not client._client.is_closed
+
+        assert client._client.is_closed
+
+
+
+    async def test_clear_cache(self) -> None:
+
+        client = MetadataClient()
+
+        client._cache["key"] = ReleaseMetadata(None, 0, 0, [], "")
+
+        await client.clear_cache()
+
+        assert not client._cache
 
 
 
@@ -23,6 +49,8 @@ class TestReleaseMetadata:
         assert ReleaseMetadata(now - timedelta(days=539), 0, 0, [], "").is_abandoned(540) is False
 
         assert ReleaseMetadata(now - timedelta(days=541), 0, 0, [], "").is_abandoned(540) is True
+
+
 
 
 
