@@ -164,59 +164,247 @@ class TestMetadataClient:
 
 
 
-        async def test_fetch_npm(self, httpx_mock) -> None:
+            async def test_fetch_npm(self, httpx_mock) -> None:
 
 
 
-            httpx_mock.add_response(
+    
 
 
 
-                url="https://registry.npmjs.org/name",
+                httpx_mock.add_response(
 
 
 
-                json={
+    
 
 
 
-                    "maintainers": [{"name": "author"}],
+                    url="https://registry.npmjs.org/name",
 
 
 
-                    "time": {"1.0": "2023-01-01T12:34:56.123Z"},
+    
 
 
 
-                },
+                    json={
 
 
 
-            )
+    
 
 
 
-            client = MetadataClient()
+                        "maintainers": [{"name": "author"}],
 
 
 
-            dependency = Dependency("npm", "name", "1.0", True, "manifest")
+    
 
 
 
-            metadata = await client._fetch_npm(dependency)
+                        "time": {"1.0": "2023-01-01T12:34:56.123Z"},
 
 
 
-            assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+    
 
 
 
-            assert metadata.total_releases == 1
+                    },
 
 
 
-            assert metadata.maintainers == ["author"]
+    
+
+
+
+                )
+
+
+
+    
+
+
+
+                client = MetadataClient()
+
+
+
+    
+
+
+
+                dependency = Dependency("npm", "name", "1.0", True, "manifest")
+
+
+
+    
+
+
+
+                metadata = await client._fetch_npm(dependency)
+
+
+
+    
+
+
+
+                assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+
+
+
+    
+
+
+
+                assert metadata.total_releases == 1
+
+
+
+    
+
+
+
+                assert metadata.maintainers == ["author"]
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            async def test_fetch_crates(self, httpx_mock) -> None:
+
+
+
+    
+
+
+
+                httpx_mock.add_response(
+
+
+
+    
+
+
+
+                    url="https://crates.io/api/v1/crates/name",
+
+
+
+    
+
+
+
+                    json={
+
+
+
+    
+
+
+
+                        "crate": {"updated_at": "2023-01-01T12:34:56.123Z"},
+
+
+
+    
+
+
+
+                        "versions": [{"created_at": "2023-01-01T12:34:56.123Z"}],
+
+
+
+    
+
+
+
+                        "teams": [{"login": "author"}],
+
+
+
+    
+
+
+
+                    },
+
+
+
+    
+
+
+
+                )
+
+
+
+    
+
+
+
+                client = MetadataClient()
+
+
+
+    
+
+
+
+                dependency = Dependency("crates", "name", "1.0", True, "manifest")
+
+
+
+    
+
+
+
+                metadata = await client._fetch_crates(dependency)
+
+
+
+    
+
+
+
+                assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+
+
+
+    
+
+
+
+                assert metadata.total_releases == 1
+
+
+
+    
+
+
+
+                assert metadata.maintainers == ["author"]
+
+
+
+    
+
+
+
+        
 
 
 
