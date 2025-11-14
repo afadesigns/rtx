@@ -80,45 +80,147 @@ class TestMetadataClient:
 
 
 
-    async def test_fetch_pypi(self, httpx_mock) -> None:
+        async def test_fetch_pypi(self, httpx_mock) -> None:
 
-        httpx_mock.add_response(
 
-            url="https://pypi.org/pypi/name/json",
 
-            json={
+            httpx_mock.add_response(
 
-                "info": {"author": "author"},
 
-                "releases": {
 
-                    "1.0": [
+                url="https://pypi.org/pypi/name/json",
 
-                        {
 
-                            "upload_time_iso_8601": "2023-01-01T12:34:56.123456Z",
 
-                        }
+                json={
 
-                    ]
+
+
+                    "info": {"author": "author"},
+
+
+
+                    "releases": {
+
+
+
+                        "1.0": [
+
+
+
+                            {
+
+
+
+                                "upload_time_iso_8601": "2023-01-01T12:34:56.123456Z",
+
+
+
+                            }
+
+
+
+                        ]
+
+
+
+                    },
+
+
 
                 },
 
-            },
 
-        )
 
-        client = MetadataClient()
+            )
 
-        dependency = Dependency("pypi", "name", "1.0", True, "manifest")
 
-        metadata = await client._fetch_pypi(dependency)
 
-        assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123456)
+            client = MetadataClient()
 
-        assert metadata.total_releases == 1
 
-        assert metadata.maintainers == ["author"]
+
+            dependency = Dependency("pypi", "name", "1.0", True, "manifest")
+
+
+
+            metadata = await client._fetch_pypi(dependency)
+
+
+
+            assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123456)
+
+
+
+            assert metadata.total_releases == 1
+
+
+
+            assert metadata.maintainers == ["author"]
+
+
+
+    
+
+
+
+        async def test_fetch_npm(self, httpx_mock) -> None:
+
+
+
+            httpx_mock.add_response(
+
+
+
+                url="https://registry.npmjs.org/name",
+
+
+
+                json={
+
+
+
+                    "maintainers": [{"name": "author"}],
+
+
+
+                    "time": {"1.0": "2023-01-01T12:34:56.123Z"},
+
+
+
+                },
+
+
+
+            )
+
+
+
+            client = MetadataClient()
+
+
+
+            dependency = Dependency("npm", "name", "1.0", True, "manifest")
+
+
+
+            metadata = await client._fetch_npm(dependency)
+
+
+
+            assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+
+
+
+            assert metadata.total_releases == 1
+
+
+
+            assert metadata.maintainers == ["author"]
+
+
+
+    
 
 
 
