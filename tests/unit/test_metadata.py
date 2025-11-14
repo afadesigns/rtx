@@ -540,7 +540,7 @@ class TestMetadataClient:
 
 
 
-                async def test_fetch_gomod(self, httpx_mock) -> None:
+                    async def test_fetch_gomod(self, httpx_mock) -> None:
 
 
 
@@ -556,7 +556,7 @@ class TestMetadataClient:
 
 
 
-                    httpx_mock.add_response(
+            
 
 
 
@@ -572,7 +572,7 @@ class TestMetadataClient:
 
 
 
-                        url="https://proxy.golang.org/name/@v/list",
+                        httpx_mock.add_response(
 
 
 
@@ -588,7 +588,7 @@ class TestMetadataClient:
 
 
 
-                        text="v1.0.0",
+            
 
 
 
@@ -604,7 +604,7 @@ class TestMetadataClient:
 
 
 
-                    )
+                            url="https://proxy.golang.org/name/@v/list",
 
 
 
@@ -620,7 +620,7 @@ class TestMetadataClient:
 
 
 
-                    httpx_mock.add_response(
+            
 
 
 
@@ -636,7 +636,7 @@ class TestMetadataClient:
 
 
 
-                        url="https://proxy.golang.org/name/@v/v1.0.0.info",
+                            text="v1.0.0",
 
 
 
@@ -652,7 +652,7 @@ class TestMetadataClient:
 
 
 
-                        json={"Time": "2023-01-01T12:34:56.123Z"},
+            
 
 
 
@@ -668,7 +668,7 @@ class TestMetadataClient:
 
 
 
-                    )
+                        )
 
 
 
@@ -684,7 +684,7 @@ class TestMetadataClient:
 
 
 
-                    client = MetadataClient()
+            
 
 
 
@@ -700,7 +700,7 @@ class TestMetadataClient:
 
 
 
-                    dependency = Dependency("go", "name", "1.0", True, "manifest")
+                        httpx_mock.add_response(
 
 
 
@@ -716,7 +716,7 @@ class TestMetadataClient:
 
 
 
-                    metadata = await client._fetch_gomod(dependency)
+            
 
 
 
@@ -732,7 +732,7 @@ class TestMetadataClient:
 
 
 
-                    assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+                            url="https://proxy.golang.org/name/@v/v1.0.0.info",
 
 
 
@@ -748,7 +748,7 @@ class TestMetadataClient:
 
 
 
-                    assert metadata.total_releases == 1
+            
 
 
 
@@ -764,7 +764,775 @@ class TestMetadataClient:
 
 
 
-                    assert metadata.maintainers == []
+                            json={"Time": "2023-01-01T12:34:56.123Z"},
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        )
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        client = MetadataClient()
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        dependency = Dependency("go", "name", "1.0", True, "manifest")
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        metadata = await client._fetch_gomod(dependency)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        assert metadata.total_releases == 1
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        assert metadata.maintainers == []
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                    async def test_fetch_rubygems(self, httpx_mock) -> None:
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        httpx_mock.add_response(
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                            url="https://rubygems.org/api/v1/versions/name.json",
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                            json=[{"created_at": "2023-01-01T12:34:56.123Z"}],
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        )
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        httpx_mock.add_response(
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                            url="https://rubygems.org/api/v1/gems/name.json",
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                            json={"authors": "author"},
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        )
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        client = MetadataClient()
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        dependency = Dependency("rubygems", "name", "1.0", True, "manifest")
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        metadata = await client._fetch_rubygems(dependency)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        assert metadata.latest_release == datetime(2023, 1, 1, 12, 34, 56, 123000)
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        assert metadata.total_releases == 1
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                        assert metadata.maintainers == ["author"]
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+            
+
+
+
+    
+
+
+
+        
+
+
+
+    
+
+
+
+                
 
 
 
