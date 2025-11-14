@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from rtx.models import Dependency
+
 from rtx.metadata import _parse_date, _dedupe_names, ReleaseMetadata, MetadataClient
 
 from rtx.utils import utc_now
@@ -33,6 +35,38 @@ class TestMetadataClient:
         await client.clear_cache()
 
         assert not client._cache
+
+
+
+    async def test_fetch_caching(self) -> None:
+
+
+
+            client = MetadataClient()
+
+
+
+            dependency = Dependency("pypi", "name", "1.0", True, "manifest")
+
+
+
+            key = client._cache_key(dependency)
+
+
+
+            metadata = ReleaseMetadata(None, 0, 0, [], "pypi")
+
+
+
+            client._cache[key] = metadata
+
+
+
+            assert await client.fetch(dependency) is metadata
+
+
+
+
 
 
 
