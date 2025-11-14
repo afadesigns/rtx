@@ -46,6 +46,12 @@ from rtx.scanners.common import (
         ("invalid-package-name>", None),
         ("name==1.2.3.", ("name", "1.2.3.")),
         ("==1.2.3", None),
+        ("==", None),
+        ("=1.2.3", None),
+        ("  ==1.2.3", None),
+        ("== 1.2.3", None),
+        ("  ==  1.2.3", None),
+        ("  ==  ", None),
     ],
 )
 def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> None:
@@ -66,6 +72,7 @@ def test_parse_requirement_line(line: str, expected: tuple[str, str] | None) -> 
         ("name>=1.0.0", ("name", ">=1.0.0")),
         ("name=", ("name", "*")),
         ("   ", None),
+        ("=1.2.3", None),
     ],
 )
 def test_parse_conda_dependency(line: str, expected: tuple[str, str] | None) -> None:
@@ -485,6 +492,7 @@ def test_read_dockerfile_pip_no_name(tmp_path: Path) -> None:
         """
         FROM python:3.9
         RUN pip install -r requirements.txt
+        RUN pip install ==1.2.3
         """
     )
     dependencies = read_dockerfile(dockerfile)

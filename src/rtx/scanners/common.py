@@ -38,6 +38,8 @@ def _parse_requirement_line(line: str) -> tuple[str, str] | None:
         return None
     if cleaned.startswith("-"):
         return None
+    if cleaned.startswith("=="):
+        return None
     if "==" in cleaned and cleaned.endswith("=="):
         return None
     try:
@@ -138,6 +140,8 @@ def _parse_conda_dependency(entry: str) -> tuple[str, str] | None:
     if "::" in candidate:
         _, candidate = candidate.split("::", 1)
         candidate = candidate.strip()
+    if candidate.startswith("="):
+        return None
     try:
         requirement = Requirement(candidate)
     except InvalidRequirement:
