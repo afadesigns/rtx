@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from rtx.models import Dependency, PackageFinding, Report
+from rtx.models import Advisory, Dependency, PackageFinding, Report, Severity
 from rtx.sbom import (
     _license_entry,
     _license_key,
@@ -110,3 +110,52 @@ def test_license_key(entry: dict, expected: tuple) -> None:
 )
 def test_serialize_references(references: list, expected: list) -> None:
     assert _serialize_references(references) == expected
+
+
+def test_generate_sbom_multiple_advisories() -> None:
+    """Test generating an SBOM with a dependency that has multiple advisories."""
+    report = Report(
+        path=Path("."),
+        findings=[
+            PackageFinding(
+                dependency=Dependency("pypi", "name", "1.0", True, Path("manifest")),
+                advisories=[
+                    Advisory("CVE-2021-1234", "source1", Severity.HIGH, "summary1"),
+                    Advisory("CVE-2021-5678", "source2", Severity.MEDIUM, "summary2"),
+                ],
+                signals=[],
+                score=0,
+            )
+        ],
+        generated_at=datetime.utcnow(),
+        managers=[],
+    )
+    sbom = generate_sbom(report)
+    assert len(sbom["vulnerabilities"]) == 2
+
+
+def test_generate_sbom_direct_indirect() -> None:
+    """Test generating an SBOM with direct and indirect dependencies."""
+    report = Report(
+        path=Path("."),
+        findings=[
+            PackageFinding(
+                dependency=Dependency("pypi", "name1", "1.0", True, Path("manifest")),
+                advisories=[],
+                signals=[],
+                score=0,
+            ),
+            PackageFinding(
+                dependency=Dependency("pypi", "name2", "2.0", False, Path("manifest")),
+                advisories=[],
+                signals=[],
+                score=0,
+            ),
+        ],
+        generated_at=datetime.utcnow(),
+        managers=[],
+    )
+    sbom = generate_sbom(report)
+    assert len(sbom["components"]) == 2
+    assert sbom["components"][0]["scope"] == "required"
+    assert sbom["components"][1]["scope"] == "optional"
