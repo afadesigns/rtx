@@ -19,6 +19,12 @@ from rtx.models import Severity
         ({"severity": [{"score": "4.0"}]}, Severity.MEDIUM),
         ({"severity": [{"score": "0.1"}]}, Severity.LOW),
         ({"database_specific": {"severity": "CRITICAL"}}, Severity.CRITICAL),
+        ({}, Severity.NONE),
+        ({"severity": []}, Severity.NONE),
+        ({"severity": [None]}, Severity.NONE),
+        ({"database_specific": None}, Severity.NONE),
+        ({"database_specific": {"severity": None}}, Severity.NONE),
+        ({"database_specific": "foo"}, Severity.NONE),
     ],
 )
 def test_severity_from_osv(entry: dict, expected: Severity) -> None:
@@ -33,6 +39,11 @@ def test_severity_from_osv(entry: dict, expected: Severity) -> None:
         ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 0.0),
         ("Score: 9.8", 9.8),
         (None, 0.0),
+        ("foo", 0.0),
+        ("", 0.0),
+        ("1.2.3", 1.2),
+        ("CVSS:foo", 0.0),
+        (False, 0.0),
     ],
 )
 def test_extract_numeric_score(raw: object, expected: float) -> None:
@@ -43,10 +54,14 @@ def test_extract_numeric_score(raw: object, expected: float) -> None:
     ("label", "expected"),
     [
         ("critical", Severity.CRITICAL),
+        ("CRITICAL", Severity.CRITICAL),
         ("high", Severity.HIGH),
+        ("HIGH", Severity.HIGH),
         ("moderate", Severity.MEDIUM),
+        ("medium", Severity.MEDIUM),
         ("low", Severity.LOW),
         (None, Severity.NONE),
+        ("unknown", Severity.NONE),
     ],
 )
 def test_severity_from_label(label: str | None, expected: Severity) -> None:
@@ -57,10 +72,14 @@ def test_severity_from_label(label: str | None, expected: Severity) -> None:
     ("label", "expected"),
     [
         ("critical", Severity.CRITICAL),
+        ("CRITICAL", Severity.CRITICAL),
         ("high", Severity.HIGH),
+        ("HIGH", Severity.HIGH),
         ("moderate", Severity.MEDIUM),
+        ("medium", Severity.MEDIUM),
         ("low", Severity.LOW),
         (None, Severity.LOW),
+        ("unknown", Severity.LOW),
     ],
 )
 def test_severity_from_github(label: str | None, expected: Severity) -> None:
