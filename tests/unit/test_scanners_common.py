@@ -419,6 +419,15 @@ def test_read_uv_lock_direct_names_project_dependencies(tmp_path: Path) -> None:
         "project-dep2": "2.0.0",
     }
 
+    # Test case for a uv.lock file where the "project" key is not a dictionary
+    (tmp_path / "not_a_dict_project.lock").write_text(
+        """
+        version = 1
+        project = "just_a_string"
+        """
+    )
+    assert read_uv_lock(tmp_path / "not_a_dict_project.lock") == {}
+
 
 def test_read_uv_lock_direct_names_dependency_groups(tmp_path: Path) -> None:
     # Test case for direct_names population when not direct_names and dependency_groups exist
