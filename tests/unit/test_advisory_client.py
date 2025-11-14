@@ -256,3 +256,173 @@ async def test_query_github_invalid_token(httpx_mock, monkeypatch):
     async with AdvisoryClient() as client:
         results = await client._query_github(dependencies)
         assert not results["pypi:test@1.0.0"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_advisories_success(httpx_mock, monkeypatch):
+    """Test a successful query with both OSV and GitHub results."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "test_token")
+    httpx_mock.add_response(
+        url="https://api.osv.dev/v1/querybatch",
+        method="POST",
+        json={"results": [{"vulns": [{"id": "OSV-1234"}]}]},
+    )
+    httpx_mock.add_response(
+        url="https://api.github.com/graphql",
+        method="POST",
+        json={"data": {"securityVulnerabilities": {"nodes": [{"advisory": {"ghsaId": "GHSA-1234"}}]}}},
+    )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        results = await client.fetch_advisories(dependencies)
+
+    advisories = results["pypi:test@1.0.0"]
+    assert len(advisories) == 2
+    assert {"OSV-1234", "GHSA-1234"} == {adv.identifier for adv in advisories}
+
+
+@pytest.mark.asyncio
+async def test_fetch_advisories_osv_fails(httpx_mock, monkeypatch):
+    """Test a query where OSV fails but GitHub succeeds."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "test_token")
+    for _ in range(config.HTTP_RETRIES + 1):
+        httpx_mock.add_response(
+            url="https://api.osv.dev/v1/querybatch",
+            method="POST",
+            status_code=500,
+        )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        with pytest.raises(Exception):
+            await client.fetch_advisories(dependencies)
+
+
+@pytest.mark.asyncio
+async def test_fetch_advisories_github_fails(httpx_mock, monkeypatch):
+    """Test a query where GitHub fails but OSV succeeds."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "test_token")
+    httpx_mock.add_response(
+        url="https://api.osv.dev/v1/querybatch",
+        method="POST",
+        json={"results": [{"vulns": [{"id": "OSV-1234"}]}]},
+    )
+    for _ in range(config.HTTP_RETRIES + 1):
+        httpx_mock.add_response(
+            url="https://api.github.com/graphql",
+            method="POST",
+            status_code=500,
+        )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        results = await client.fetch_advisories(dependencies)
+
+    advisories = results["pypi:test@1.0.0"]
+    assert len(advisories) == 1
+    assert advisories[0].identifier == "OSV-1234"
+
+
+@pytest.mark.asyncio
+async def test_fetch_advisories_both_fail(httpx_mock, monkeypatch):
+    """Test a query where both OSV and GitHub fail."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "test_token")
+    for _ in range(config.HTTP_RETRIES + 1):
+        httpx_mock.add_response(
+            url="https://api.osv.dev/v1/querybatch",
+            method="POST",
+            status_code=500,
+        )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        with pytest.raises(Exception):
+            await client.fetch_advisories(dependencies)
+
+
+@pytest.mark.asyncio
+async def test_fetch_advisories_no_dependencies():
+    """Test a query with no dependencies."""
+    async with AdvisoryClient() as client:
+        results = await client.fetch_advisories([])
+    assert not results
+
+
+@pytest.mark.asyncio
+async def test_fetch_advisories_merging(httpx_mock, monkeypatch):
+    """Test the merging of advisories from different sources."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "test_token")
+    httpx_mock.add_response(
+        url="https://api.osv.dev/v1/querybatch",
+        method="POST",
+        json={"results": [{"vulns": [{"id": "GHSA-1234", "summary": "OSV summary"}]}]},
+    )
+    httpx_mock.add_response(
+        url="https://api.github.com/graphql",
+        method="POST",
+        json={
+            "data": {
+                "securityVulnerabilities": {
+                    "nodes": [
+                        {
+                            "advisory": {
+                                "ghsaId": "GHSA-1234",
+                                "summary": "GitHub summary",
+                                "severity": "HIGH",
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        results = await client.fetch_advisories(dependencies)
+
+    advisories = results["pypi:test@1.0.0"]
+    assert len(advisories) == 1
+    assert advisories[0].identifier == "GHSA-1234"
+    assert advisories[0].summary == "GitHub summary"

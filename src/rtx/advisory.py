@@ -176,7 +176,7 @@ class AdvisoryClient:
             key = dep.coordinate
             merged: dict[tuple[str, str], Advisory] = {}
             for advisory in chain(osv_results.get(key, []), gh_results.get(key, [])):
-                dedup_key = (advisory.source, advisory.identifier)
+                dedup_key = advisory.identifier
                 existing = merged.get(dedup_key)
                 if existing is None:
                     merged[dedup_key] = Advisory(
