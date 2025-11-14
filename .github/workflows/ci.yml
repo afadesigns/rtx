@@ -50,7 +50,17 @@ jobs:
         run: mypy src
 
       - name: Pytest
-        run: pytest -q
+        run: pytest --cov=src --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v4.5.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: true
 
   security:
     name: Security Scan
