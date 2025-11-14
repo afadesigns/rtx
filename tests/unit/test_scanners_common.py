@@ -488,6 +488,16 @@ def test_read_uv_lock_direct_names_dependency_groups(tmp_path: Path) -> None:
     )
     assert read_uv_lock(tmp_path / "not_a_string_dependency.lock") == {}
 
+    # Test case for a uv.lock file where a dependency is invalid
+    (tmp_path / "invalid_dependency.lock").write_text(
+        """
+        version = 1
+        [dependency-groups.dev]
+        dependencies = ["invalid-package-name>"]
+        """
+    )
+    assert read_uv_lock(tmp_path / "invalid_dependency.lock") == {}
+
 
 def test_read_uv_lock_no_direct_names_fallback(tmp_path: Path) -> None:
     # Test case for results population when no direct_names are found, falling back to all packages
