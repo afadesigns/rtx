@@ -163,3 +163,96 @@ async def test_query_osv_caching(httpx_mock):
         await client._query_osv(dependencies)
 
     assert len(httpx_mock.get_requests()) == 1
+
+
+@pytest.mark.asyncio
+async def test_query_github_success(httpx_mock, monkeypatch):
+    """Test a successful query to GitHub."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "test_token")
+    httpx_mock.add_response(
+        url="https://api.github.com/graphql",
+        method="POST",
+        json={
+            "data": {
+                "securityVulnerabilities": {
+                    "nodes": [
+                        {
+                            "advisory": {
+                                "ghsaId": "GHSA-1234",
+                                "summary": "A vulnerability",
+                                "references": [{"url": "http://example.com"}],
+                                "severity": "HIGH",
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        results = await client._query_github(dependencies)
+
+    assert "pypi:test@1.0.0" in results
+    advisories = results["pypi:test@1.0.0"]
+    assert len(advisories) == 1
+    assert advisories[0].identifier == "GHSA-1234"
+    assert advisories[0].summary == "A vulnerability"
+
+
+@pytest.mark.asyncio
+async def test_query_github_api_error(httpx_mock, monkeypatch):
+    """Test a query that returns an error from the GitHub API."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "test_token")
+    for _ in range(config.HTTP_RETRIES + 1):
+        httpx_mock.add_response(
+            url="https://api.github.com/graphql",
+            method="POST",
+            status_code=500,
+        )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        results = await client._query_github(dependencies)
+        assert not results["pypi:test@1.0.0"]
+
+
+@pytest.mark.asyncio
+async def test_query_github_invalid_token(httpx_mock, monkeypatch):
+    """Test a query with an invalid GitHub token."""
+    monkeypatch.setenv("RTX_GITHUB_TOKEN", "invalid_token")
+    httpx_mock.add_response(
+        url="https://api.github.com/graphql",
+        method="POST",
+        status_code=401,
+    )
+
+    dependencies = [
+        Dependency(
+            name="test",
+            version="1.0.0",
+            ecosystem="pypi",
+            direct=True,
+            manifest=Path("requirements.txt"),
+        )
+    ]
+    async with AdvisoryClient() as client:
+        results = await client._query_github(dependencies)
+        assert not results["pypi:test@1.0.0"]
