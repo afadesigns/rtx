@@ -29,6 +29,9 @@ def test_parse_date_normalizes_timezone() -> None:
     assert parsed.year == 2024
     assert parsed.month == 9
     assert parsed.day == 19
+    parsed = _parse_date("2024-09-19T12:34:56-05:00")
+    assert parsed is not None
+    assert parsed.hour == 17
 
 
 def test_parse_date_supports_fractional_and_z_suffix() -> None:
@@ -36,6 +39,13 @@ def test_parse_date_supports_fractional_and_z_suffix() -> None:
     assert parsed is not None
     assert parsed.microsecond == 123456
     assert parsed.tzinfo is None
+
+
+def test_parse_date_edge_cases() -> None:
+    assert _parse_date(None) is None
+    assert _parse_date("") is None
+    assert _parse_date("  ") is None
+    assert _parse_date("not a date") is None
 
 
 def test_dedupe_names_normalizes_and_trims() -> None:
@@ -49,6 +59,8 @@ def test_dedupe_names_preserves_order() -> None:
         "Two",
         "Three",
     ]
+    assert _dedupe_names(["One"]) == ["One"]
+    assert _dedupe_names(["One", "one"]) == ["One"]
 
 
 def test_release_metadata_uses_slots() -> None:
