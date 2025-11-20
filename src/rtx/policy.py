@@ -18,7 +18,22 @@ SEVERITY_SCORE = {
 }
 
 
+try:
+    import Levenshtein
+except ImportError:
+    Levenshtein = None
+
+
 def levenshtein(a: str, b: str, *, max_distance: int | None = None) -> int:
+    if Levenshtein is not None:
+        # Levenshtein.distance does not support max_distance directly as a keyword arg
+        # but it can be implemented by checking the distance against max_distance after calculation.
+        distance = Levenshtein.distance(a, b)
+        if max_distance is not None and distance > max_distance:
+            return max_distance + 1
+        return distance
+    
+    # Fallback to pure Python implementation
     if max_distance is not None and max_distance < 0:
         raise ValueError("max_distance must be >= 0")
     if a == b:

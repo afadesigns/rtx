@@ -321,7 +321,10 @@ class AdvisoryClient:
                     async def execute() -> dict[str, list[Advisory]]:
                         return await task(deps_copy)
 
-                    return await self._retry(execute)
+                    try:
+                        return await self._retry(execute)
+                    except httpx.HTTPStatusError as exc:
+                        raise AdvisoryServiceError(str(exc))
 
             chunk_results: list[dict[str, list[Advisory]]] = []
 

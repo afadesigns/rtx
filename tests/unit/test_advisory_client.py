@@ -1,10 +1,11 @@
 from pathlib import Path
 
+import httpx
 import pytest
-from httpx import Response
 
 from rtx import config
 from rtx.advisory import AdvisoryClient
+from rtx.exceptions import AdvisoryServiceError
 from rtx.models import Dependency
 
 
@@ -134,8 +135,9 @@ async def test_query_osv_api_error(httpx_mock):
         )
     ]
     async with AdvisoryClient() as client:
-        with pytest.raises(Exception):
+        with pytest.raises(ExceptionGroup) as excinfo:
             await client._query_osv(dependencies)
+        assert any(isinstance(exc, AdvisoryServiceError) for exc in excinfo.value.exceptions)
 
 
 @pytest.mark.asyncio
@@ -270,7 +272,13 @@ async def test_fetch_advisories_success(httpx_mock, monkeypatch):
     httpx_mock.add_response(
         url="https://api.github.com/graphql",
         method="POST",
-        json={"data": {"securityVulnerabilities": {"nodes": [{"advisory": {"ghsaId": "GHSA-1234"}}]}}},
+        json={
+            "data": {
+                "securityVulnerabilities": {
+                    "nodes": [{"advisory": {"ghsaId": "GHSA-1234"}}]
+                }
+            }
+        },
     )
 
     dependencies = [
@@ -311,8 +319,9 @@ async def test_fetch_advisories_osv_fails(httpx_mock, monkeypatch):
         )
     ]
     async with AdvisoryClient() as client:
-        with pytest.raises(Exception):
+        with pytest.raises(ExceptionGroup) as excinfo:
             await client.fetch_advisories(dependencies)
+        assert any(isinstance(exc, AdvisoryServiceError) for exc in excinfo.value.exceptions)
 
 
 @pytest.mark.asyncio
@@ -369,8 +378,9 @@ async def test_fetch_advisories_both_fail(httpx_mock, monkeypatch):
         )
     ]
     async with AdvisoryClient() as client:
-        with pytest.raises(Exception):
+        with pytest.raises(ExceptionGroup) as excinfo:
             await client.fetch_advisories(dependencies)
+        assert any(isinstance(exc, AdvisoryServiceError) for exc in excinfo.value.exceptions)
 
 
 @pytest.mark.asyncio
