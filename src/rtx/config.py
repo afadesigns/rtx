@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
+
+import tomli
 
 from rtx import __version__
 
@@ -9,15 +12,30 @@ DATA_DIR = Path(__file__).parent / "data"
 CACHE_DIR = Path.home() / ".cache" / "rtx"
 USER_AGENT = f"rtx/{__version__} (+https://github.com/afadesigns/rtx)"
 
+def _load_config_from_file() -> dict[str, Any]:
+    config_path = Path("rtx.toml")
+    if not config_path.is_file():
+        return {}
+    try:
+        with config_path.open("rb") as f:
+            return tomli.load(f)
+    except tomli.TomlDecodeError:
+        return {}
+
+_FILE_CONFIG = _load_config_from_file().get("rtx", {})
+
 
 def _int_env(name: str, default: int) -> int:
-    raw = os.getenv(name)
+    raw = os.getenv(name) or _FILE_CONFIG.get(name.lower().removeprefix("rtx_"))
     if raw is None:
         return default
     try:
         value = int(raw)
     except ValueError:
-        return default
+        try:
+            value = int(float(raw))
+        except ValueError:
+            return default
     return max(1, value)
 
 
@@ -33,7 +51,7 @@ def _non_negative_int_env(name: str, default: int) -> int:
 
 
 def _float_env(name: str, default: float) -> float:
-    raw = os.getenv(name)
+    raw = os.getenv(name) or _FILE_CONFIG.get(name.lower().removeprefix("rtx_"))
     if raw is None:
         return default
     try:
@@ -44,10 +62,10 @@ def _float_env(name: str, default: float) -> float:
 
 
 def _bool_env(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
+    raw = os.getenv(name) or _FILE_CONFIG.get(name.lower().removeprefix("rtx_"))
     if raw is None:
         return default
-    normalized = raw.strip().lower()
+    normalized = str(raw).strip().lower()
     if not normalized:
         return default
     return normalized in {"1", "true", "yes", "on"}
@@ -62,13 +80,12 @@ def _cpu_parallel_default() -> int:
 
 DEFAULT_POLICY_CONCURRENCY = _cpu_parallel_default()
 
-
+RTX_CACHE_DIR = os.getenv("RTX_CACHE_DIR", str(CACHE_DIR))
 POLICY_ANALYSIS_CONCURRENCY = _int_env("RTX_POLICY_CONCURRENCY", DEFAULT_POLICY_CONCURRENCY)
 HTTP_TIMEOUT = _float_env("RTX_HTTP_TIMEOUT", 5.0)
-HTTP_RETRIES = _non_negative_int_env("RTX_HTTP_RETRIES", 2)
+HTTP_RETRIES = _int_env("RTX_HTTP_RETRIES", 2)
 OSV_BATCH_SIZE = _int_env("RTX_OSV_BATCH_SIZE", 18)
 OSV_MAX_CONCURRENCY = _int_env("RTX_OSV_MAX_CONCURRENCY", 4)
-OSV_CACHE_SIZE = _non_negative_int_env("RTX_OSV_CACHE_SIZE", 512)
 DISABLE_OSV = _bool_env("RTX_DISABLE_OSV", False)
 GITHUB_MAX_CONCURRENCY = _int_env("RTX_GITHUB_MAX_CONCURRENCY", 6)
 GOMOD_METADATA_CONCURRENCY = _int_env("RTX_GOMOD_CONCURRENCY", 5)

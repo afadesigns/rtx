@@ -11,6 +11,7 @@ from types import TracebackType
 from typing import Any, cast
 
 import httpx
+from diskcache import Cache
 
 from rtx import config
 from rtx.exceptions import AdvisoryServiceError
@@ -131,6 +132,7 @@ class AdvisoryClient:
         *,
         timeout: float = config.HTTP_TIMEOUT,
         retries: int = config.HTTP_RETRIES,
+        cache_dir: str = config.RTX_CACHE_DIR,
     ) -> None:
         self._client = httpx.AsyncClient(
             timeout=timeout, headers={"User-Agent": config.USER_AGENT}
@@ -142,8 +144,8 @@ class AdvisoryClient:
             config.GITHUB_DEFAULT_TOKEN_ENV
         )
         self._gh_disabled = env_flag("RTX_DISABLE_GITHUB_ADVISORIES", False)
-        self._osv_cache: OrderedDict[str, list[Advisory]] = OrderedDict()
-        self._osv_cache_size = config.OSV_CACHE_SIZE
+        self._osv_cache = Cache(directory=os.path.join(cache_dir, "advisories_osv"))
+        self._github_cache = Cache(directory=os.path.join(cache_dir, "advisories_github"))
 
     async def __aenter__(self) -> AdvisoryClient:
         return self
@@ -155,6 +157,8 @@ class AdvisoryClient:
         tb: TracebackType | None,
     ) -> None:
         await self.close()
+        self._osv_cache.close()
+        self._github_cache.close()
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -240,12 +244,10 @@ class AdvisoryClient:
                 continue
             ecosystem_overrides[coordinate] = osv_ecosystem
             supported_dependencies.append(dep)
-            if self._osv_cache_size > 0:
-                cached_value = self._osv_cache.get(coordinate)
-                if cached_value is not None:
-                    cached[coordinate] = list(cached_value)
-                    self._osv_cache.move_to_end(coordinate)
-                    continue
+            cached_value = self._osv_cache.get(coordinate)
+            if cached_value is not None:
+                cached[coordinate] = list(cached_value)
+                continue
             unique_uncached.setdefault(coordinate, dep)
 
         async def task(chunk_deps: list[Dependency]) -> dict[str, list[Advisory]]:
@@ -344,13 +346,7 @@ class AdvisoryClient:
             for chunk_result in chunk_results:
                 for key, advisories in chunk_result.items():
                     aggregated[key] = advisories
-                    if self._osv_cache_size > 0:
-                        if key in self._osv_cache:
-                            self._osv_cache.move_to_end(key)
-                        else:
-                            while len(self._osv_cache) >= self._osv_cache_size:
-                                self._osv_cache.popitem(last=False)
-                        self._osv_cache[key] = list(advisories)
+                    self._osv_cache[key] = list(advisories)
 
         for coordinate in unsupported_coordinates:
             aggregated.setdefault(coordinate, [])
@@ -362,6 +358,7 @@ class AdvisoryClient:
 
     def clear_cache(self) -> None:
         self._osv_cache.clear()
+        self._github_cache.clear()
 
     async def _query_github(
         self, dependencies: list[Dependency]
@@ -383,6 +380,11 @@ class AdvisoryClient:
         """
 
         async def fetch(dep: Dependency) -> list[Advisory]:
+            cache_key = f"{dep.ecosystem}-{dep.name}"
+            cached_value = self._github_cache.get(cache_key)
+            if cached_value is not None:
+                return list(cached_value)
+
             variables = {
                 "ecosystem": dep.ecosystem.upper(),
                 "package": dep.name,
@@ -429,6 +431,7 @@ class AdvisoryClient:
                         references=references,
                     )
                 )
+            self._github_cache[cache_key] = list(advisories)
             return advisories
 
         results: dict[str, list[Advisory]] = {}

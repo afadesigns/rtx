@@ -1,0 +1,9 @@
+[rtx]
+cache_dir = "~/.cache/rtx"
+http_timeout = 5.0
+http_retries = 2
+osv_batch_size = 18
+osv_max_concurrency = 4
+disable_osv = false
+github_max_concurrency = 6
+gomod_metadata_concurrency = 5

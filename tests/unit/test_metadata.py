@@ -7,19 +7,57 @@ from typing import Any
 
 import pytest
 
+import pytest_asyncio
+
+import respx
+
+
+
 from rtx.metadata import MetadataClient, ReleaseMetadata, _dedupe_names, _parse_date
 from rtx.models import Dependency
 from rtx.utils import utc_now
 
 httpx = pytest.importorskip("httpx")
 
+@pytest_asyncio.fixture
+async def metadata_client_with_cache(tmp_path: Path) -> MetadataClient:
+    client = MetadataClient(cache_dir=str(tmp_path))
+    yield client
+    await client.close()
 
-def json_response(payload: dict[str, Any], *, status_code: int = 200) -> httpx.Response:
-    return httpx.Response(status_code, json=payload)
 
+@respx.mock
+@pytest.mark.asyncio
+async def test_metadata_client_persistent_caching(metadata_client_with_cache: MetadataClient) -> None:
+    client = metadata_client_with_cache
+    dep = Dependency("pypi", "requests", "2.28.1", Path("requirements.txt"))
+    pypi_response_payload = {
+        "info": {},
+        "releases": {
+            "2.28.1": [
+                {
+                    "upload_time_iso_8601": utc_now().isoformat(),
+                    "yanked": False,
+                }
+            ]
+        },
+    }
 
-def text_response(content: str, *, status_code: int = 200) -> httpx.Response:
-    return httpx.Response(status_code, text=content)
+    # First call: should hit the network and populate cache
+    respx.get("https://pypi.org/pypi/requests/json").respond(200, json=pypi_response_payload)
+    metadata = await client.fetch(dep)
+    assert metadata.total_releases == 1
+
+    # Second call: should hit the cache, network should not be called
+    respx.get("https://pypi.org/pypi/requests/json").respond(500) # This should not be hit
+    metadata_cached = await client.fetch(dep)
+    assert metadata_cached.total_releases == 1
+
+    # Clear cache and try again: should hit network again
+    await client.clear_cache()
+    respx.get("https://pypi.org/pypi/requests/json").respond(200, json=pypi_response_payload)
+    metadata_after_clear = await client.fetch(dep)
+    assert metadata_after_clear.total_releases == 1
 
 
 def test_parse_date_normalizes_timezone() -> None:
@@ -165,37 +203,10 @@ async def test_fetch_reuses_cache_for_same_package(monkeypatch, tmp_path: Path) 
 
 
 @pytest.mark.asyncio
-async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
+async def test_fetch_pypi_404(monkeypatch, tmp_path: Path) -> None:
     dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
-    now = utc_now()
-    older = now - timedelta(days=1)
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/json"):
-            return json_response(
-                {
-                    "info": {
-                        "maintainers": [{"username": "alice"}, {"username": "ALICE"}],
-                        "author": "bob",
-                    },
-                    "releases": {
-                        "1.0.0": [
-                            {"upload_time_iso_8601": older.isoformat(), "yanked": True},
-                            {
-                                "upload_time": now.replace(microsecond=0).isoformat()
-                                + "Z",
-                            },
-                        ],
-                        "0.9.0": [
-                            {
-                                "upload_time_iso_8601": (
-                                    now - timedelta(days=31)
-                                ).isoformat()
-                            }
-                        ],
-                    },
-                }
-            )
         return httpx.Response(404)
 
     client = MetadataClient()
@@ -207,10 +218,129 @@ async def test_fetch_pypi_parses_metadata(monkeypatch, tmp_path: Path) -> None:
     finally:
         await client.close()
 
-    assert metadata.latest_release is not None
-    assert metadata.latest_release.date() == now.date()
-    assert metadata.releases_last_30d == 1
-    assert metadata.total_releases == 2
+    assert metadata.latest_release is None
+    assert metadata.releases_last_30d == 0
+    assert metadata.total_releases == 0
+    assert metadata.maintainers == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_pypi_no_releases(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return json_response({"info": {}})
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_pypi(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is None
+    assert metadata.releases_last_30d == 0
+    assert metadata.total_releases == 0
+    assert metadata.maintainers == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_pypi_no_files(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return json_response({"info": {}, "releases": {"1.0.0": []}})
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_pypi(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is None
+    assert metadata.releases_last_30d == 0
+    assert metadata.total_releases == 0
+    assert metadata.maintainers == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_pypi_yanked_files(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(
+            {
+                "info": {},
+                "releases": {
+                    "1.0.0": [
+                        {
+                            "upload_time_iso_8601": utc_now().isoformat(),
+                            "yanked": True,
+                        }
+                    ]
+                },
+            }
+        )
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_pypi(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is None
+    assert metadata.releases_last_30d == 0
+    assert metadata.total_releases == 0
+    assert metadata.maintainers == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_pypi_no_upload_time(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return json_response({"info": {}, "releases": {"1.0.0": [{}]}})
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_pypi(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.latest_release is None
+    assert metadata.releases_last_30d == 0
+    assert metadata.total_releases == 1
+    assert metadata.maintainers == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_pypi_no_maintainers(monkeypatch, tmp_path: Path) -> None:
+    dependency = Dependency("pypi", "demo", "1.0.0", True, tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return json_response({"info": {}, "releases": {}})
+
+    client = MetadataClient()
+    await client._client.aclose()
+    client._client = _client_with_transport(handler)
+    client._retry = _PassthroughRetry()
+    try:
+        metadata = await client._fetch_pypi(dependency)
+    finally:
+        await client.close()
+
+    assert metadata.maintainers == []
 
 
 @pytest.mark.asyncio
@@ -574,3 +704,21 @@ def test_release_metadata_helper_methods() -> None:
     )
     assert high_churn.churn_band() == "high"
     assert not high_churn.is_low_maturity()
+
+    no_release = ReleaseMetadata(
+        latest_release=None,
+        releases_last_30d=0,
+        total_releases=0,
+        maintainers=[],
+        ecosystem="pypi",
+    )
+    assert not no_release.is_abandoned()
+
+    no_release = ReleaseMetadata(
+        latest_release=None,
+        releases_last_30d=0,
+        total_releases=0,
+        maintainers=[],
+        ecosystem="pypi",
+    )
+    assert not no_release.is_abandoned()

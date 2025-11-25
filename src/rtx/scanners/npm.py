@@ -114,25 +114,28 @@ class NpmScanner(BaseScanner):
 
         yarn_lock = root / "yarn.lock"
         if yarn_lock.exists():
-            current_name: str | None = None
-            for line in yarn_lock.read_text(encoding="utf-8").splitlines():
-                line = line.rstrip()
-                if not line:
-                    current_name = None
-                elif not line.startswith(" ") and ":" in line:
-                    segment = line.split(":", 1)[0]
-                    if segment.startswith('"') and segment.endswith('"'):
-                        segment = segment.strip('"')
-                    if "@" in segment:
-                        current_name = segment.split("@", 1)[0]
-                elif current_name and line.strip().startswith("version "):
-                    version = line.split('"', 2)[1]
+            try:
+                import yaml
+            except ImportError:
+                # This should not happen if pyyaml is installed, but as a fallback
+                # we might consider logging a warning or raising an error.
+                return []
+            
+            content = yarn_lock.read_text(encoding="utf-8")
+            data = yaml.safe_load(content)
+
+            for key, value in data.items():
+                if not isinstance(value, dict):
+                    continue
+                name_match = key.split("@", 1)[0].strip()
+                version = value.get("version")
+                if name_match and version and isinstance(version, str):
                     record(
-                        current_name,
+                        name_match,
                         version,
                         yarn_lock,
-                        direct=direct_flags.get(current_name),
-                        scope=direct_scopes.get(current_name, "transitive"),
+                        direct=direct_flags.get(name_match),
+                        scope=direct_scopes.get(name_match, "transitive"),
                         prefer_source=True,
                     )
 

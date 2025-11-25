@@ -8,6 +8,7 @@ from functools import lru_cache
 from types import TracebackType
 
 import httpx
+from diskcache import Cache
 
 from rtx import config
 from rtx.models import Dependency
@@ -121,6 +122,7 @@ class MetadataClient:
         *,
         timeout: float = config.HTTP_TIMEOUT,
         retries: int = config.HTTP_RETRIES,
+        cache_dir: str = config.RTX_CACHE_DIR,
     ) -> None:
         self._client = httpx.AsyncClient(
             timeout=timeout, headers={"User-Agent": config.USER_AGENT}
@@ -129,6 +131,7 @@ class MetadataClient:
             retries=retries, delay=0.5, exceptions=(httpx.HTTPError,)
         )
         self._cache: dict[str, ReleaseMetadata] = {}
+        self._disk_cache = Cache(directory=os.path.join(cache_dir, "metadata"))
         self._inflight: dict[str, asyncio.Task[ReleaseMetadata]] = {}
         self._lock = asyncio.Lock()
         self._fetchers: dict[
@@ -154,6 +157,7 @@ class MetadataClient:
         tb: TracebackType | None,
     ) -> None:
         await self.close()
+        self._disk_cache.close()
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -164,10 +168,15 @@ class MetadataClient:
                 for task in self._inflight.values():
                     task.cancel()
             self._cache.clear()
+            self._disk_cache.clear()
             self._inflight.clear()
 
     async def fetch(self, dependency: Dependency) -> ReleaseMetadata:
         key = self._cache_key(dependency)
+        cached = self._disk_cache.get(key)
+        if cached is not None:
+            return cached
+
         async with self._lock:
             cached = self._cache.get(key)
             if cached is not None:
@@ -184,6 +193,7 @@ class MetadataClient:
             raise
         async with self._lock:
             self._cache[key] = result
+            self._disk_cache[key] = result
             self._inflight.pop(key, None)
         return result
 

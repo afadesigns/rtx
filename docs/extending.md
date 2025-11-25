@@ -1,0 +1,65 @@
+# Extending RTX
+
+RTX is designed to be extensible, allowing users and contributors to add support for new package ecosystems or introduce custom trust signals. This document outlines the process for doing so.
+
+## Adding a New Package Scanner
+
+To add support for a new package ecosystem (e.g., a new language's package manager), you'll need to create a new scanner module.
+
+1.  **Create a new scanner file:** In `src/rtx/scanners/`, create a new Python file (e.g., `my_new_scanner.py`).
+2.  **Inherit from `BaseScanner`:** Your new scanner class should inherit from `rtx.scanners.base.BaseScanner`.
+3.  **Define `manager`, `manifests`, and `ecosystem`:**
+    *   `manager`: A unique string identifier for your package manager (e.g., "pip", "cargo").
+    *   `manifests`: A list of filenames that identify your package manager's manifest or lock files (e.g., `["requirements.txt", "Pipfile.lock"]`).
+    *   `ecosystem`: The ecosystem name used by advisory databases (e.g., "PyPI", "crates.io").
+4.  **Implement the `scan` method:** This method takes a `Path` object (the root of the project) and should return a list of `rtx.models.Dependency` objects. This is where your logic for parsing manifest files and extracting dependencies will reside.
+5.  **Register your scanner:** In `src/rtx/registry.py`, import your new scanner and add it to the `_SCANNERS` list.
+
+**Example Structure for `src/rtx/scanners/my_new_scanner.py`:**
+
+```python
+from __future__ import annotations
+
+from pathlib import Path
+from typing import ClassVar
+
+from rtx.models import Dependency
+from rtx.scanners.base import BaseScanner
+
+class MyNewScanner(BaseScanner):
+    manager: ClassVar[str] = "my-new-manager"
+    manifests: ClassVar[list[str]] = ["MyManifest.json", "MyLockfile.lock"]
+    ecosystem: ClassVar[str] = "MyEcosystem"
+
+    def scan(self, root: Path) -> list[Dependency]:
+        dependencies: list[Dependency] = []
+        # Your parsing logic here
+        # Example:
+        # manifest_path = root / "MyManifest.json"
+        # if manifest_path.exists():
+        #     # Parse manifest_path and create Dependency objects
+        #     dependencies.append(self._dependency(name="my-package", version="1.0.0", manifest=manifest_path))
+        return dependencies
+```
+
+## Adding a New Trust Signal
+
+Trust signals are used by the `TrustPolicyEngine` to evaluate the trustworthiness of a dependency. To add a new signal:
+
+1.  **Identify the signal logic:** Determine the criteria for your new trust signal (e.g., "package has more than 10 maintainers", "package has a security policy defined").
+2.  **Modify `src/rtx/policy.py`:**
+    *   In the `TrustPolicyEngine` class, you'll find the `_derive_signals` method. This is where existing signals are computed. Add your new signal's logic here.
+    *   Each signal should set a boolean value on the `TrustSignal` object.
+    *   Consider creating helper methods within `TrustPolicyEngine` if your signal logic is complex.
+
+**Example of adding a new signal in `_derive_signals`:**
+
+```python
+# In src/rtx/policy.py, within TrustPolicyEngine._derive_signals method
+# ...
+if metadata.maintainer_count() > 10:
+    signals.has_many_maintainers = True
+# ...
+```
+
+Remember to run tests and ensure your changes integrate well with the existing codebase.
