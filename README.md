@@ -67,15 +67,105 @@ rtx report --format json --output reports/rtx.json
 ```
 
 ## Configuration & Tuning
+
+RTX can be configured via `rtx.toml` (a TOML file in your project root) or environment variables. Environment variables always take precedence over `rtx.toml` settings.
+
+
+
+**Example `rtx.toml`:**
+
+```toml
+
+[rtx]
+
+cache_dir = "~/.cache/rtx"
+
+http_timeout = 10.0
+
+http_retries = 3
+
+osv_batch_size = 20
+
+osv_max_concurrency = 8
+
+disable_osv = false
+
+github_max_concurrency = 10
+
+gomod_metadata_concurrency = 8
+
+
+
+# Policy thresholds
+
+policy_abandonment_threshold_days = 365
+
+policy_churn_high_threshold = 15
+
+policy_churn_medium_threshold = 7
+
+policy_bus_factor_zero_threshold = 1
+
+policy_bus_factor_one_threshold = 2
+
+policy_low_maturity_threshold = 5
+
+policy_typosquat_max_distance = 1
+
+```
+
+
+
+**Available settings (also configurable via `RTX_<SETTING_NAME>` environment variables):**
+
+- `cache_dir`: Path to the directory where RTX stores persistent cache data (default `~/.cache/rtx`).
+
+- `http_timeout`: Network request timeout in seconds (default `5.0`).
+
+- `http_retries`: Number of retries for failed network requests (default `2`).
+
+- `osv_batch_size`: Number of dependencies to query per OSV API batch request (default `18`).
+
+- `osv_max_concurrency`: Maximum concurrent OSV API requests (default `4`).
+
+- `disable_osv`: Set to `true` or `1` to bypass OSV lookups (default `false`).
+
+- `github_max_concurrency`: Maximum concurrent GitHub Security API requests (default `6`).
+
+- `gomod_metadata_concurrency`: Maximum concurrent Go module metadata requests (default `5`).
+
+
+
+**Configurable Trust Policy Thresholds:**
+
+- `policy_abandonment_threshold_days`: Number of days without a release before a package is flagged as abandoned (default `540`).
+
+- `policy_churn_high_threshold`: Number of releases in the last 30 days to trigger a 'high churn' signal (default `10`).
+
+- `policy_churn_medium_threshold`: Number of releases in the last 30 days to trigger a 'medium churn' signal (default `5`).
+
+- `policy_bus_factor_zero_threshold`: Maximum number of maintainers to trigger a 'zero bus factor' signal (default `0`).
+
+- `policy_bus_factor_one_threshold`: Maximum number of maintainers to trigger a 'single maintainer' signal (default `1`).
+
+- `policy_low_maturity_threshold`: Minimum total releases for a package to be considered mature (default `3`).
+
+- `policy_typosquat_max_distance`: Maximum Levenshtein distance for typosquatting detection (default `2`).
+
+
+
+Existing Environment Variable Based Configuration:
+
 - Set `RTX_POLICY_CONCURRENCY` to throttle how many policy evaluations run in parallel (default `16`). Lower the value when scanning inside constrained CI runners or behind strict rate limits.
-- Network-bound clients honor `RTX_HTTP_TIMEOUT` (seconds, default `5.0`) and `RTX_HTTP_RETRIES` (non-negative integer, default `2`) to tune resilience versus responsiveness.
-- Set `RTX_GITHUB_MAX_CONCURRENCY` to bound concurrent GitHub Security API requests (default `6`).
-- Toggle `RTX_DISABLE_OSV=1` to bypass OSV lookups when running offline or during smoke tests.
+
 - Toggle `RTX_DISABLE_GITHUB_ADVISORIES=1` when running in air-gapped or rate-limited environments to skip GitHub lookups entirely.
-- Control OSV batching with `RTX_OSV_BATCH_SIZE` (default `18`), cap the in-memory OSV cache with `RTX_OSV_CACHE_SIZE` (default `512`), and bound concurrent OSV API requests via `RTX_OSV_MAX_CONCURRENCY` (default `4`).
+
 - Lockfile detection covers `poetry.lock`, `uv.lock`, and `environment.yml` so mixed-language workspaces are fully scanned without manual manifest hints.
+
 - CLI format switches are validated directly by argparse. Passing an unsupported format (for example `--format pdf`) exits with an actionable error before any network calls occur.
+
 - Providing an unknown package manager via `--manager` now fails fast with the offending name, making misconfigurations obvious during automation.
+
 - Run `make smoke` for an end-to-end check that executes diagnostics and an offline scan against `examples/mixed`.
 
 ## CLI Overview
@@ -110,15 +200,16 @@ print(report.summary())
 - Releases publish signed wheels, SBOMs, and SLSA provenance via GitHub OIDC + cosign.
 
 ## Roadmap
-1. Artifact attestation for container images.
-2. Native integrations for Maven Enforcer and Gradle.
-3. Streaming trust dashboards with anomaly alerts.
-4. Workspace diff views for GitHub, GitLab, and Bitbucket Apps.
+1. Dependency graph visualization and export options.
+2. Artifact attestation for container images.
+3. Native integrations for Maven Enforcer and Gradle.
+4. Streaming trust dashboards with anomaly alerts.
+5. Workspace diff views for GitHub, GitLab, and Bitbucket Apps.
 
 ## FAQ
 **Why another dependency scanner?** rtx focuses on pre-upgrade guardrails, not post-incident triage.  
 **Does it phone home?** No. Network requests are limited to advisories and metadata endpoints; they respect enterprise proxies.  
-**Can I extend support?** Yes. Create a plugin under `src/rtx/scanners` and register it in `rtx.registry`.  
+**Can I extend support?** Yes. See [docs/extending.md](docs/extending.md) for details on adding new scanners or configuring trust policies.  
 **How do exit codes map to severity?** 0 = safe, 1 = medium trust gaps, 2 = high/critical risk.
 
 ## Community & Support
