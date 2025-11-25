@@ -62,4 +62,32 @@ if metadata.maintainer_count() > 10:
 # ...
 ```
 
+## Configuring Existing Trust Policies
+
+Many of RTX's built-in trust policies can be configured via the `rtx.toml` file or environment variables. These settings allow you to fine-tune the thresholds for various trust signals.
+
+To configure a policy, add a `[rtx]` section to your `rtx.toml` file (if it doesn't already exist) and specify the desired parameters:
+
+```toml
+[rtx]
+# Abandonment policy: number of days without a release before considered abandoned
+policy_abandonment_threshold_days = 365
+
+# Churn policy: number of releases in the last 30 days to be considered high or medium churn
+policy_churn_high_threshold = 15
+policy_churn_medium_threshold = 7
+
+# Bus factor policy: maintainer count thresholds for 'zero' and 'one' maintainer signals
+policy_bus_factor_zero_threshold = 1
+policy_bus_factor_one_threshold = 2
+
+# Low maturity policy: minimum number of total releases for a package to be considered mature
+policy_low_maturity_threshold = 5
+
+# Typosquatting policy: maximum Levenshtein distance for typosquatting detection
+policy_typosquat_max_distance = 1
+```
+
+Alternatively, you can configure these settings using environment variables, which take precedence over `rtx.toml`. The environment variable names are derived from the `rtx.toml` keys by uppercasing and prefixing with `RTX_` (e.g., `RTX_POLICY_ABANDONMENT_THRESHOLD_DAYS`).
+
 Remember to run tests and ensure your changes integrate well with the existing codebase.
