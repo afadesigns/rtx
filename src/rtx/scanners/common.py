@@ -620,33 +620,47 @@ def read_maven_pom(path: Path) -> dict[str, str]:
     return deps
 
 
-def read_go_mod(path: Path) -> dict[str, str]:
+def read_go_mod(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
     out: dict[str, str] = {}
+    relationships: list[tuple[str, str]] = []
     lines = path.read_text(encoding="utf-8").splitlines()
     in_block = False
+    main_module_name: str | None = None
+
     for raw_line in lines:
         line = raw_line.strip()
-        if not line or line.startswith(("module", "//", "replace", "go")):
+        if not line or line.startswith("//"):
             continue
+
+        if line.startswith("module "):
+            main_module_name = line.split(maxsplit=1)[1].strip()
+            continue
+
         if line.startswith("require ("):
             in_block = True
             continue
         if in_block and line.startswith(")"):
             in_block = False
             continue
+
+        module_name: str | None = None
+        module_version: str | None = None
+
         if line.startswith("require") and not line.endswith("("):
             parts = line.split()
             if len(parts) >= 3:
-                _, module, version = parts[:3]
-                out[module] = version
-            continue
-        if in_block and " " in line:
-            module, version = line.split()[:2]
-            out[module] = version
+                _, module_name, module_version = parts[:3]
+        elif in_block and " " in line:
+            module_name, module_version = line.split()[:2]
         elif " " in line:
-            module, version = line.split()[:2]
-            out[module] = version
-    return out
+            module_name, module_version = line.split()[:2]
+
+        if module_name and module_version:
+            out[module_name] = module_version
+            if main_module_name:
+                relationships.append((main_module_name, module_name))
+
+    return out, relationships
 
 
 def read_cargo_lock(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
