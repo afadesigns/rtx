@@ -9,7 +9,7 @@ from typing import Any, cast
 from rtx import config
 from rtx.advisory import AdvisoryClient
 from rtx.exceptions import ManifestNotFound
-from rtx.models import Dependency, PackageFinding, Report
+from rtx.models import Dependency, PackageFinding, Report, ScannerResult
 from rtx.policy import TrustPolicyEngine
 from rtx.registry import get_scanners
 from rtx.utils import Graph, is_non_string_sequence, unique_preserving_order, utc_now
@@ -38,8 +38,9 @@ async def scan_project_async(path: Path, *, managers: list[str] | None = None) -
     root = path.resolve()
     scanners = get_scanners(managers)
     discovered: list[Dependency] = []
+    all_relationships: list[tuple[str, str]] = []
     used_managers: list[str] = []
-    scan_jobs: list[tuple[str, Awaitable[list[Dependency]]]] = []
+    scan_jobs: list[tuple[str, Awaitable[ScannerResult]]] = []
     for scanner in scanners:
         if managers is None and not scanner.matches(root):
             continue
@@ -47,9 +48,10 @@ async def scan_project_async(path: Path, *, managers: list[str] | None = None) -
 
     if scan_jobs:
         results = await asyncio.gather(*(job for _, job in scan_jobs))
-        for (manager, _), packages in zip(scan_jobs, results):
-            if packages:
-                discovered.extend(packages)
+        for (manager, _), scanner_result in zip(scan_jobs, results):
+            if scanner_result.dependencies:
+                discovered.extend(scanner_result.dependencies)
+                all_relationships.extend(scanner_result.relationships)
                 used_managers.append(manager)
     if not discovered:
         raise ManifestNotFound("No supported manifests found")
@@ -101,6 +103,10 @@ async def scan_project_async(path: Path, *, managers: list[str] | None = None) -
                 "manifest": str(finding.dependency.manifest),
             },
         )
+    for src, dest in all_relationships:
+        # Only add edges if both source and destination nodes exist in the graph
+        if src in graph._nodes and dest in graph._nodes:
+            graph.add_edge(src, dest)
 
     direct_count = sum(1 for finding in findings if finding.dependency.direct)
     manager_usage = Counter(finding.dependency.ecosystem for finding in findings)

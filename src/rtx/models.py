@@ -239,3 +239,8 @@ class Report(BaseModel):
     @property
     def signal_summary(self) -> SignalSummary:
         return SignalSummary.from_findings(self.findings)
+
+
+class ScannerResult(BaseModel):
+    dependencies: list[Dependency] = Field(default_factory=list)
+    relationships: list[tuple[str, str]] = Field(default_factory=list)

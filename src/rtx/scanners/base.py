@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar
 
-from rtx.models import Dependency
+from rtx.models import Dependency, ScannerResult
 from rtx.utils import has_matching_file
 
 
@@ -18,8 +18,8 @@ class BaseScanner(ABC):
         return has_matching_file(root, self.manifests)
 
     @abstractmethod
-    def scan(self, root: Path) -> list[Dependency]:
-        """Return a list of resolved dependencies."""
+    def scan(self, root: Path) -> ScannerResult:
+        """Return a list of resolved dependencies and their relationships."""
 
     def _dependency(
         self,

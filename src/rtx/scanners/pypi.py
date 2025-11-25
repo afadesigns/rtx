@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 
 from packaging.requirements import InvalidRequirement, Requirement
 
-from rtx.models import Dependency
+from rtx.models import Dependency, ScannerResult
 from rtx.scanners import common
 from rtx.scanners.base import BaseScanner
 
@@ -26,11 +26,12 @@ class PyPIScanner(BaseScanner):
     ]
     ecosystem: ClassVar[str] = "pypi"
 
-    def scan(self, root: Path) -> list[Dependency]:
+    def scan(self, root: Path) -> ScannerResult:
         dependencies: dict[str, str] = {}
         origins: dict[str, Path] = {}
         direct_flags: dict[str, bool] = {}
         metadata_map: dict[str, dict[str, Any]] = {}
+        relationships: list[tuple[str, str]] = [] # Placeholder for future implementation
 
         def record(
             name: str,
@@ -359,7 +360,7 @@ class PyPIScanner(BaseScanner):
                     metadata=metadata,
                 )
             )
-        return results
+        return ScannerResult(dependencies=results, relationships=relationships)
 
 
 def _record_requirements(

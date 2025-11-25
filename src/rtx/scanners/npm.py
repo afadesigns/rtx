@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, ClassVar
 
-from rtx.models import Dependency
+from rtx.models import Dependency, ScannerResult
 from rtx.scanners import common
 from rtx.scanners.base import BaseScanner
 from rtx.utils import read_json
@@ -19,12 +19,13 @@ class NpmScanner(BaseScanner):
     ]
     ecosystem: ClassVar[str] = "npm"
 
-    def scan(self, root: Path) -> list[Dependency]:
+    def scan(self, root: Path) -> ScannerResult:
         dependencies: dict[str, str] = {}
         origins: dict[str, Path] = {}
         metadata_map: dict[str, dict[str, Any]] = {}
         direct_flags: dict[str, bool] = {}
         direct_scopes: dict[str, str] = {}
+        relationships: list[tuple[str, str]] = [] # Placeholder for future implementation
 
         def record(
             name: str,
@@ -119,7 +120,7 @@ class NpmScanner(BaseScanner):
             except ImportError:
                 # This should not happen if pyyaml is installed, but as a fallback
                 # we might consider logging a warning or raising an error.
-                return []
+                return ScannerResult(dependencies=[], relationships=[])
             
             content = yarn_lock.read_text(encoding="utf-8")
             data = yaml.safe_load(content)
@@ -159,7 +160,7 @@ class NpmScanner(BaseScanner):
                     metadata=metadata,
                 )
             )
-        return results
+        return ScannerResult(dependencies=results, relationships=relationships)
 
 
 def _normalize_npm_version(raw: str) -> str:
