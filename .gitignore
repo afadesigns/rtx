@@ -25,6 +25,7 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 .pytest_cache/
+.ruff_cache/
 .genkit/
 
 # IDEs & tools
