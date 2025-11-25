@@ -66,13 +66,19 @@ jobs:
       - name: Install dependencies with uv
         run: uv sync
       - name: Run tests
-        run: pytest -q
+        run: pytest -q --cov-report=html:.htmlcov
       - name: Upload coverage
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9
         with:
           name: coverage-report-${{ matrix.python-version }}
           path: .coverage
+      - name: Upload HTML Coverage Report
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9
+        with:
+          name: html-coverage-report-${{ matrix.python-version }}
+          path: .htmlcov
 
   fuzz:
     runs-on: ubuntu-latest
