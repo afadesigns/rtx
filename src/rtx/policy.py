@@ -72,7 +72,17 @@ class ThreatSignals:
 
 
 class TrustPolicyEngine:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        abandonment_threshold_days: int = config.POLICY_ABANDONMENT_THRESHOLD_DAYS,
+        churn_high_threshold: int = config.POLICY_CHURN_HIGH_THRESHOLD,
+        churn_medium_threshold: int = config.POLICY_CHURN_MEDIUM_THRESHOLD,
+        bus_factor_zero_threshold: int = config.POLICY_BUS_FACTOR_ZERO_THRESHOLD,
+        bus_factor_one_threshold: int = config.POLICY_BUS_FACTOR_ONE_THRESHOLD,
+        low_maturity_threshold: int = config.POLICY_LOW_MATURITY_THRESHOLD,
+        typosquat_max_distance: int = config.POLICY_TYPOSQUAT_MAX_DISTANCE,
+    ) -> None:
         top_packages_path = config.DATA_DIR / "top_packages.json"
         compromised_path = config.DATA_DIR / "compromised_maintainers.json"
         raw_top_packages = load_json_resource(top_packages_path)
@@ -111,6 +121,13 @@ class TrustPolicyEngine:
                 key = (ecosystem.casefold(), package.casefold())
                 self._compromised_index[key] = dict(entry)
         self._metadata_client = MetadataClient()
+        self._abandonment_threshold_days = abandonment_threshold_days
+        self._churn_high_threshold = churn_high_threshold
+        self._churn_medium_threshold = churn_medium_threshold
+        self._bus_factor_zero_threshold = bus_factor_zero_threshold
+        self._bus_factor_one_threshold = bus_factor_one_threshold
+        self._low_maturity_threshold = low_maturity_threshold
+        self._typosquat_max_distance = typosquat_max_distance
 
     async def __aenter__(self) -> TrustPolicyEngine:
         return self
@@ -157,7 +174,7 @@ class TrustPolicyEngine:
                 )
             )
         # Abandonment
-        if metadata.is_abandoned():
+        if metadata.is_abandoned(threshold_days=self._abandonment_threshold_days):
             evidence = {
                 "latest_release": (
                     metadata.latest_release.isoformat()
@@ -170,18 +187,26 @@ class TrustPolicyEngine:
                 TrustSignal(
                     category="abandonment",
                     severity=Severity.HIGH,
-                    message="No release in the last 18 months",
+                    message=(
+                        f"No release in the last {self._abandonment_threshold_days} days"
+                    ),
                     evidence=evidence,
                 )
             )
         # Suspicious churn
-        churn_band = metadata.churn_band()
+        churn_band = metadata.churn_band(
+            high_threshold=self._churn_high_threshold,
+            medium_threshold=self._churn_medium_threshold,
+        )
         if churn_band == "high":
             signals.append(
                 TrustSignal(
                     category="churn",
                     severity=Severity.HIGH,
-                    message="Extreme release velocity in the last 30 days",
+                    message=(
+                        "Extreme release velocity in the last 30 days "
+                        f"(>{self._churn_high_threshold} releases)"
+                    ),
                     evidence={"releases_last_30d": metadata.releases_last_30d},
                 )
             )
@@ -190,13 +215,16 @@ class TrustPolicyEngine:
                 TrustSignal(
                     category="churn",
                     severity=Severity.MEDIUM,
-                    message="High release velocity in the last 30 days",
+                    message=(
+                        "High release velocity in the last 30 days "
+                        f"(>{self._churn_medium_threshold} releases)"
+                    ),
                     evidence={"releases_last_30d": metadata.releases_last_30d},
                 )
             )
         # Bus factor
         maintainer_count = metadata.maintainer_count()
-        if maintainer_count == 0:
+        if maintainer_count <= self._bus_factor_zero_threshold:
             signals.append(
                 TrustSignal(
                     category="maintainer",
@@ -205,7 +233,7 @@ class TrustPolicyEngine:
                     evidence={"maintainers": metadata.maintainers},
                 )
             )
-        elif maintainer_count == 1:
+        elif maintainer_count <= self._bus_factor_one_threshold:
             signals.append(
                 TrustSignal(
                     category="maintainer",
@@ -215,7 +243,7 @@ class TrustPolicyEngine:
                 )
             )
         # Release maturity
-        if metadata.is_low_maturity():
+        if metadata.is_low_maturity(minimum_releases=self._low_maturity_threshold):
             signals.append(
                 TrustSignal(
                     category="maturity",
@@ -243,7 +271,9 @@ class TrustPolicyEngine:
         for top_name, normalized in self._top_package_pairs.get(ecosystem_key, []):
             if candidate == normalized:
                 continue
-            distance = levenshtein(candidate, normalized, max_distance=2)
+            distance = levenshtein(
+                candidate, normalized, max_distance=self._typosquat_max_distance
+            )
             if distance == 1:
                 signals.append(
                     TrustSignal(
@@ -254,7 +284,7 @@ class TrustPolicyEngine:
                     )
                 )
                 break
-            if distance == 2:
+            if distance == 2 and self._typosquat_max_distance >= 2:
                 signals.append(
                     TrustSignal(
                         category="typosquat",

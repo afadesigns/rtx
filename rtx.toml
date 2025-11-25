@@ -7,3 +7,11 @@ osv_max_concurrency = 4
 disable_osv = false
 github_max_concurrency = 6
 gomod_metadata_concurrency = 5
+
+policy_abandonment_threshold_days = 540
+policy_churn_high_threshold = 10
+policy_churn_medium_threshold = 5
+policy_bus_factor_zero_threshold = 0
+policy_bus_factor_one_threshold = 1
+policy_low_maturity_threshold = 3
+policy_typosquat_max_distance = 2

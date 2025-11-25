@@ -83,10 +83,12 @@ class ReleaseMetadata:
     def has_suspicious_churn(self) -> bool:
         return self.releases_last_30d >= 5
 
-    def churn_band(self) -> str:
-        if self.releases_last_30d >= 10:
+    def churn_band(
+        self, *, high_threshold: int = 10, medium_threshold: int = 5
+    ) -> str:
+        if self.releases_last_30d >= high_threshold:
             return "high"
-        if self.releases_last_30d >= 5:
+        if self.releases_last_30d >= medium_threshold:
             return "medium"
         return "normal"
 
