@@ -97,91 +97,689 @@ class PyPIScanner(BaseScanner):
 
         requirement_context: dict[str, set[str]] = {}
 
+        self._scan_pyproject_toml(root, record, requirement_context)
+
+        self._scan_uv_toml(root, record, requirement_context)
+
+        results: list[Dependency] = []
+        for name, version in sorted(dependencies.items()):
+            manifest = origins.get(name, root)
+            metadata = metadata_map.get(name, {"source": manifest.name})
+            if "extras" in metadata and isinstance(metadata["extras"], list):
+                metadata["extras"] = sorted(set(metadata["extras"]))
+            if "requires_extras" in metadata and isinstance(metadata["requires_extras"], list):
+                metadata["requires_extras"] = sorted(set(metadata["requires_extras"]))
+            if "markers" in metadata:
+                markers = metadata["markers"]
+                if isinstance(markers, list):
+                    metadata["markers"] = sorted(set(markers))
+                elif isinstance(markers, str):
+                    metadata["markers"] = [markers]
+            results.append(
+                self._dependency(
+                    name=name,
+                    version=common.normalize_version(version),
+                    manifest=manifest,
+                    direct=direct_flags.get(name, False),
+                    metadata=metadata,
+                )
+            )
+        return ScannerResult(dependencies=results, relationships=relationships)
+
+    def _scan_pyproject_toml(
+        self, root: Path, record: Callable, requirement_context: dict[str, set[str]]
+    ) -> None:
         pyproject = root / "pyproject.toml"
-        if pyproject.exists():
-            data = common.read_toml(pyproject)
-            project = data.get("project", {}) if isinstance(data, dict) else {}
-            deps = project.get("dependencies", []) if isinstance(project, dict) else []
-            _record_requirements(
-                deps,
-                pyproject,
-                record,
-                scope="production",
-                direct=True,
+        if not pyproject.exists():
+            return
+
+        data = common.read_toml(pyproject)
+        project = data.get("project", {}) if isinstance(data, dict) else {}
+        deps = project.get("dependencies", []) if isinstance(project, dict) else []
+        _record_requirements(
+            deps,
+            pyproject,
+            record,
+            scope="production",
+            direct=True,
+        )
+
+        optional_section = project.get("optional-dependencies", {})
+        if isinstance(optional_section, dict):
+            for group, entries in optional_section.items():
+                if isinstance(group, str) and isinstance(entries, list):
+                    _record_requirements(
+                        entries,
+                        pyproject,
+                        record,
+                        scope=f"optional:{group}",
+                        direct=True,
+                        optional=True,
+                        extras=(group,),
+                    )
+
+        tool_section = data.get("tool", {}) if isinstance(data, dict) else {}
+        poetry = tool_section.get("poetry", {}) if isinstance(tool_section, dict) else {}
+        if isinstance(poetry, dict):
+            poetry_deps = poetry.get("dependencies", {})
+            if isinstance(poetry_deps, dict):
+                for name, version in poetry_deps.items():
+                    if not isinstance(name, str) or name == "python":
+                        continue
+                    record(
+                        name,
+                        _coerce_version_spec(version),
+                        pyproject,
+                        direct=True,
+                        scope="production",
+                    )
+
+            legacy_dev = poetry.get("dev-dependencies", {})
+            if isinstance(legacy_dev, dict):
+                for name, version in legacy_dev.items():
+                    if not isinstance(name, str):
+                        continue
+                    record(
+                        name,
+                        _coerce_version_spec(version),
+                        pyproject,
+                        direct=True,
+                        scope="development",
+                        optional=True,
+                        extras=("dev",),
+                    )
+
+            poetry_groups = poetry.get("group", {})
+            if isinstance(poetry_groups, dict):
+                for group_name, group_data in poetry_groups.items():
+                    if not isinstance(group_name, str) or not isinstance(group_data, dict):
+                        continue
+                    group_scope = (
+                        "development"
+                        if group_name in {"dev", "test", "tests"}
+                        else f"group:{group_name}"
+                    )
+                    group_optional = group_name != "default"
+                    entries = group_data.get("dependencies")
+                    if isinstance(entries, dict):
+                        for dep_name, spec in entries.items():
+                            if not isinstance(dep_name, str):
+                                continue
+                            record(
+                                dep_name,
+                                _coerce_version_spec(spec),
+                                pyproject,
+                                direct=True,
+                                scope=group_scope,
+                                optional=group_optional,
+                                extras=(group_name,) if group_optional else None,
+                            )
+
+    def _scan_poetry_lock(
+        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]]
+    ) -> None:
+        poetry_lock = root / "poetry.lock"
+        if not poetry_lock.exists():
+            return
+
+        for name, version in common.read_poetry_lock(poetry_lock).items():
+            record(
+                name,
+                version,
+                poetry_lock,
+                direct=direct_flags.get(name),
+                scope=metadata_map.get(name, {}).get("scope", "transitive"),
             )
 
-            optional_section = project.get("optional-dependencies", {})
-            if isinstance(optional_section, dict):
-                for group, entries in optional_section.items():
-                    if isinstance(group, str) and isinstance(entries, list):
-                        _record_requirements(
+    def _scan_uv_lock(
+        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]]
+    ) -> None:
+        uv_lock = root / "uv.lock"
+        if not uv_lock.exists():
+            return
+
+        for name, version in common.read_uv_lock(uv_lock).items():
+            record(
+                name,
+                version,
+                uv_lock,
+                direct=direct_flags.get(name),
+                scope=metadata_map.get(name, {}).get("scope", "transitive"),
+            )
+
+    def _scan_requirements_files(
+        self, root: Path, record: Callable, requirement_context: dict[str, set[str]]
+    ) -> None:
+        for filename in ("requirements.txt", "requirements.in", "constraints.txt"):
+            path = root / filename
+            if not path.exists():
+                continue
+            scope = "constraints" if filename == "constraints.txt" else "production"
+            requirement_scope = "constraint" if filename == "constraints.txt" else "requirement"
+            resolved = common.read_requirements(
+                path,
+                context=requirement_context,
+                kind=requirement_scope,
+            )
+            for name, version in resolved.items():
+                flags = requirement_context.get(name, set())
+                direct_flag = "requirement" in flags
+                constraint_flag = "constraint" in flags
+                effective_direct: bool | None
+                if direct_flag:
+                    effective_direct = True
+                elif constraint_flag:
+                    effective_direct = False
+                else:
+                    effective_direct = None
+                effective_scope = (
+                    "constraints" if constraint_flag and not direct_flag else scope
+                )
+                record(
+                    name,
+                    version,
+                    path,
+                    direct=effective_direct,
+                    scope=effective_scope,
+                    constraint=constraint_flag,
+                )
+
+    def _scan_pipfile_lock(
+        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]]
+    ) -> None:
+        pipfile_lock = root / "Pipfile.lock"
+        if not pipfile_lock.exists():
+            return
+
+        for name, version in common.load_lock_dependencies(pipfile_lock).items():
+            record(
+                name,
+                version,
+                pipfile_lock,
+                direct=direct_flags.get(name),
+                scope=metadata_map.get(name, {}).get("scope", "transitive"),
+            )
+
+    def _scan_pipfile(
+        self, root: Path, record: Callable
+    ) -> None:
+        pipfile = root / "Pipfile"
+        if not pipfile.exists():
+            return
+
+        data = common.read_toml(pipfile)
+        for section in ("packages", "dev-packages"):
+            section_data = data.get(section, {})
+            if not isinstance(section_data, dict):
+                continue
+            for name, version in section_data.items():
+                if isinstance(name, str):
+                    record(
+                        name,
+                        _coerce_version_spec(version),
+                        pipfile,
+                        direct=True,
+                        scope="development" if section == "dev-packages" else "production",
+                        optional=section == "dev-packages",
+                        extras=("dev",) if section == "dev-packages" else None,
+                    )
+
+        if uv_toml.exists():
+            uv_data = common.read_toml(uv_toml)
+
+            def _record_uv_entries(
+                entries: object,
+                *,
+                scope: str,
+                optional: bool = False,
+                label: str | None = None,
+            ) -> None:
+                if isinstance(entries, dict):
+                    for dep_name, spec in entries.items():
+                        if isinstance(dep_name, str):
+                            record(
+                                dep_name,
+                                _coerce_version_spec(spec),
+                                uv_toml,
+                                direct=True,
+                                scope=scope,
+                                optional=optional,
+                                extras=(label,) if label else None,
+                            )
+                elif isinstance(entries, list):
+                    _record_requirements(
+                        entries,
+                        uv_toml,
+                        record,
+                        scope=scope,
+                        direct=True,
+                        optional=optional,
+                        extras=(label,) if label else None,
+                    )
+
+            _record_uv_entries(uv_data.get("dependencies"), scope="production")
+            _record_uv_entries(
+                uv_data.get("dev-dependencies"), scope="development", optional=True, label="dev"
+            )
+            optional_deps = uv_data.get("optional-dependencies")
+            if isinstance(optional_deps, dict):
+                for extra_name, entries in optional_deps.items():
+                    if isinstance(extra_name, str):
+                        _record_uv_entries(
                             entries,
-                            pyproject,
-                            record,
-                            scope=f"optional:{group}",
-                            direct=True,
+                            scope=f"optional:{extra_name}",
                             optional=True,
-                            extras=(group,),
+                            label=extra_name,
                         )
 
-            tool_section = data.get("tool", {}) if isinstance(data, dict) else {}
-            poetry = tool_section.get("poetry", {}) if isinstance(tool_section, dict) else {}
-            if isinstance(poetry, dict):
-                poetry_deps = poetry.get("dependencies", {})
-                if isinstance(poetry_deps, dict):
-                    for name, version in poetry_deps.items():
-                        if not isinstance(name, str) or name == "python":
-                            continue
-                        record(
-                            name,
-                            _coerce_version_spec(version),
-                            pyproject,
-                            direct=True,
-                            scope="production",
-                        )
-
-                legacy_dev = poetry.get("dev-dependencies", {})
-                if isinstance(legacy_dev, dict):
-                    for name, version in legacy_dev.items():
-                        if not isinstance(name, str):
-                            continue
-                        record(
-                            name,
-                            _coerce_version_spec(version),
-                            pyproject,
-                            direct=True,
-                            scope="development",
-                            optional=True,
-                            extras=("dev",),
-                        )
-
-                poetry_groups = poetry.get("group", {})
-                if isinstance(poetry_groups, dict):
-                    for group_name, group_data in poetry_groups.items():
-                        if not isinstance(group_name, str) or not isinstance(group_data, dict):
-                            continue
-                        group_scope = (
-                            "development"
-                            if group_name in {"dev", "test", "tests"}
-                            else f"group:{group_name}"
-                        )
-                        group_optional = group_name != "default"
-                        entries = group_data.get("dependencies")
-                        if isinstance(entries, dict):
-                            for dep_name, spec in entries.items():
-                                if not isinstance(dep_name, str):
-                                    continue
-                                record(
-                                    dep_name,
-                                    _coerce_version_spec(spec),
-                                    pyproject,
-                                    direct=True,
-                                    scope=group_scope,
-                                    optional=group_optional,
-                                    extras=(group_name,) if group_optional else None,
+            tool_section = uv_data.get("tool")
+            if isinstance(tool_section, dict):
+                uv_tool = tool_section.get("uv")
+                if isinstance(uv_tool, dict):
+                    _record_uv_entries(uv_tool.get("dependencies"), scope="production")
+                    _record_uv_entries(
+                        uv_tool.get("dev-dependencies"),
+                        scope="development",
+                        optional=True,
+                        label="dev",
+                    )
+                    optional_tool = uv_tool.get("optional-dependencies")
+                    if isinstance(optional_tool, dict):
+                        for extra_name, entries in optional_tool.items():
+                            if isinstance(extra_name, str):
+                                _record_uv_entries(
+                                    entries,
+                                    scope=f"optional:{extra_name}",
+                                    optional=True,
+                                    label=extra_name,
                                 )
 
+        results: list[Dependency] = []
+        for name, version in sorted(dependencies.items()):
+            manifest = origins.get(name, root)
+            metadata = metadata_map.get(name, {"source": manifest.name})
+            if "extras" in metadata and isinstance(metadata["extras"], list):
+                metadata["extras"] = sorted(set(metadata["extras"]))
+            if "requires_extras" in metadata and isinstance(metadata["requires_extras"], list):
+                metadata["requires_extras"] = sorted(set(metadata["requires_extras"]))
+            if "markers" in metadata:
+                markers = metadata["markers"]
+                if isinstance(markers, list):
+                    metadata["markers"] = sorted(set(markers))
+                elif isinstance(markers, str):
+                    metadata["markers"] = [markers]
+            results.append(
+                self._dependency(
+                    name=name,
+                    version=common.normalize_version(version),
+                    manifest=manifest,
+                    direct=direct_flags.get(name, False),
+                    metadata=metadata,
+                )
+            )
+        return ScannerResult(dependencies=results, relationships=relationships)
+
+    def _scan_pyproject_toml(
+        self, root: Path, record: Callable, requirement_context: dict[str, set[str]]
+    ) -> None:
+        pyproject = root / "pyproject.toml"
+        if not pyproject.exists():
+            return
+
+        data = common.read_toml(pyproject)
+        project = data.get("project", {}) if isinstance(data, dict) else {}
+        deps = project.get("dependencies", []) if isinstance(project, dict) else []
+        _record_requirements(
+            deps,
+            pyproject,
+            record,
+            scope="production",
+            direct=True,
+        )
+
+        optional_section = project.get("optional-dependencies", {})
+        if isinstance(optional_section, dict):
+            for group, entries in optional_section.items():
+                if isinstance(group, str) and isinstance(entries, list):
+                    _record_requirements(
+                        entries,
+                        pyproject,
+                        record,
+                        scope=f"optional:{group}",
+                        direct=True,
+                        optional=True,
+                        extras=(group,),
+                    )
+
+        tool_section = data.get("tool", {}) if isinstance(data, dict) else {}
+        poetry = tool_section.get("poetry", {}) if isinstance(tool_section, dict) else {}
+        if isinstance(poetry, dict):
+            poetry_deps = poetry.get("dependencies", {})
+            if isinstance(poetry_deps, dict):
+                for name, version in poetry_deps.items():
+                    if not isinstance(name, str) or name == "python":
+                        continue
+                    record(
+                        name,
+                        _coerce_version_spec(version),
+                        pyproject,
+                        direct=True,
+                        scope="production",
+                    )
+
+            legacy_dev = poetry.get("dev-dependencies", {})
+            if isinstance(legacy_dev, dict):
+                for name, version in legacy_dev.items():
+                    if not isinstance(name, str):
+                        continue
+                    record(
+                        name,
+                        _coerce_version_spec(version),
+                        pyproject,
+                        direct=True,
+                        scope="development",
+                        optional=True,
+                        extras=("dev",),
+                    )
+
+            poetry_groups = poetry.get("group", {})
+            if isinstance(poetry_groups, dict):
+                for group_name, group_data in poetry_groups.items():
+                    if not isinstance(group_name, str) or not isinstance(group_data, dict):
+                        continue
+                    group_scope = (
+                        "development"
+                        if group_name in {"dev", "test", "tests"}
+                        else f"group:{group_name}"
+                    )
+                    group_optional = group_name != "default"
+                    entries = group_data.get("dependencies")
+                    if isinstance(entries, dict):
+                        for dep_name, spec in entries.items():
+                            if not isinstance(dep_name, str):
+                                continue
+                            record(
+                                dep_name,
+                                _coerce_version_spec(spec),
+                                pyproject,
+                                direct=True,
+                                scope=group_scope,
+                                optional=group_optional,
+                                extras=(group_name,) if group_optional else None,
+                            )
+
+    def _scan_poetry_lock(
+        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]]
+    ) -> None:
         poetry_lock = root / "poetry.lock"
+        if not poetry_lock.exists():
+            return
+
+        for name, version in common.read_poetry_lock(poetry_lock).items():
+            record(
+                name,
+                version,
+                poetry_lock,
+                direct=direct_flags.get(name),
+                scope=metadata_map.get(name, {}).get("scope", "transitive"),
+            )
+        if uv_lock.exists():
+            for name, version in common.read_uv_lock(uv_lock).items():
+                record(
+                    name,
+                    version,
+                    uv_lock,
+                    direct=direct_flags.get(name),
+                    scope=metadata_map.get(name, {}).get("scope", "transitive"),
+                )
+
+        for filename in ("requirements.txt", "requirements.in", "constraints.txt"):
+            path = root / filename
+            if path.exists():
+                scope = "constraints" if filename == "constraints.txt" else "production"
+                requirement_scope = "constraint" if filename == "constraints.txt" else "requirement"
+                resolved = common.read_requirements(
+                    path,
+                    context=requirement_context,
+                    kind=requirement_scope,
+                )
+                for name, version in resolved.items():
+                    flags = requirement_context.get(name, set())
+                    direct_flag = "requirement" in flags
+                    constraint_flag = "constraint" in flags
+                    effective_direct: bool | None
+                    if direct_flag:
+                        effective_direct = True
+                    elif constraint_flag:
+                        effective_direct = False
+                    else:
+                        effective_direct = None
+                    effective_scope = (
+                        "constraints" if constraint_flag and not direct_flag else scope
+                    )
+                    record(
+                        name,
+                        version,
+                        path,
+                        direct=effective_direct,
+                        scope=effective_scope,
+                        constraint=constraint_flag,
+                    )
+
+        pipfile_lock = root / "Pipfile.lock"
+        if pipfile_lock.exists():
+            for name, version in common.load_lock_dependencies(pipfile_lock).items():
+                record(
+                    name,
+                    version,
+                    pipfile_lock,
+                    direct=direct_flags.get(name),
+                    scope=metadata_map.get(name, {}).get("scope", "transitive"),
+                )
+
+        pipfile = root / "Pipfile"
+        if pipfile.exists():
+            data = common.read_toml(pipfile)
+            for section in ("packages", "dev-packages"):
+                section_data = data.get(section, {})
+                if not isinstance(section_data, dict):
+                    continue
+                for name, version in section_data.items():
+                    if isinstance(name, str):
+                        record(
+                            name,
+                            _coerce_version_spec(version),
+                            pipfile,
+                            direct=True,
+                            scope="development" if section == "dev-packages" else "production",
+                            optional=section == "dev-packages",
+                            extras=("dev",) if section == "dev-packages" else None,
+                        )
+
+        uv_toml = root / "uv.toml"
+        if uv_toml.exists():
+            uv_data = common.read_toml(uv_toml)
+
+            def _record_uv_entries(
+                entries: object,
+                *,
+                scope: str,
+                optional: bool = False,
+                label: str | None = None,
+            ) -> None:
+                if isinstance(entries, dict):
+                    for dep_name, spec in entries.items():
+                        if isinstance(dep_name, str):
+                            record(
+                                dep_name,
+                                _coerce_version_spec(spec),
+                                uv_toml,
+                                direct=True,
+                                scope=scope,
+                                optional=optional,
+                                extras=(label,) if label else None,
+                            )
+                elif isinstance(entries, list):
+                    _record_requirements(
+                        entries,
+                        uv_toml,
+                        record,
+                        scope=scope,
+                        direct=True,
+                        optional=optional,
+                        extras=(label,) if label else None,
+                    )
+
+            _record_uv_entries(uv_data.get("dependencies"), scope="production")
+            _record_uv_entries(
+                uv_data.get("dev-dependencies"), scope="development", optional=True, label="dev"
+            )
+            optional_deps = uv_data.get("optional-dependencies")
+            if isinstance(optional_deps, dict):
+                for extra_name, entries in optional_deps.items():
+                    if isinstance(extra_name, str):
+                        _record_uv_entries(
+                            entries,
+                            scope=f"optional:{extra_name}",
+                            optional=True,
+                            label=extra_name,
+                        )
+
+            tool_section = uv_data.get("tool")
+            if isinstance(tool_section, dict):
+                uv_tool = tool_section.get("uv")
+                if isinstance(uv_tool, dict):
+                    _record_uv_entries(uv_tool.get("dependencies"), scope="production")
+                    _record_uv_entries(
+                        uv_tool.get("dev-dependencies"),
+                        scope="development",
+                        optional=True,
+                        label="dev",
+                    )
+                    optional_tool = uv_tool.get("optional-dependencies")
+                    if isinstance(optional_tool, dict):
+                        for extra_name, entries in optional_tool.items():
+                            if isinstance(extra_name, str):
+                                _record_uv_entries(
+                                    entries,
+                                    scope=f"optional:{extra_name}",
+                                    optional=True,
+                                    label=extra_name,
+                                )
+
+        results: list[Dependency] = []
+        for name, version in sorted(dependencies.items()):
+            manifest = origins.get(name, root)
+            metadata = metadata_map.get(name, {"source": manifest.name})
+            if "extras" in metadata and isinstance(metadata["extras"], list):
+                metadata["extras"] = sorted(set(metadata["extras"]))
+            if "requires_extras" in metadata and isinstance(metadata["requires_extras"], list):
+                metadata["requires_extras"] = sorted(set(metadata["requires_extras"]))
+            if "markers" in metadata:
+                markers = metadata["markers"]
+                if isinstance(markers, list):
+                    metadata["markers"] = sorted(set(markers))
+                elif isinstance(markers, str):
+                    metadata["markers"] = [markers]
+            results.append(
+                self._dependency(
+                    name=name,
+                    version=common.normalize_version(version),
+                    manifest=manifest,
+                    direct=direct_flags.get(name, False),
+                    metadata=metadata,
+                )
+            )
+        return ScannerResult(dependencies=results, relationships=relationships)
+
+    def _scan_pyproject_toml(
+        self, root: Path, record: Callable, requirement_context: dict[str, set[str]]
+    ) -> None:
+        pyproject = root / "pyproject.toml"
+        if not pyproject.exists():
+            return
+
+        data = common.read_toml(pyproject)
+        project = data.get("project", {}) if isinstance(data, dict) else {}
+        deps = project.get("dependencies", []) if isinstance(project, dict) else []
+        _record_requirements(
+            deps,
+            pyproject,
+            record,
+            scope="production",
+            direct=True,
+        )
+
+        optional_section = project.get("optional-dependencies", {})
+        if isinstance(optional_section, dict):
+            for group, entries in optional_section.items():
+                if isinstance(group, str) and isinstance(entries, list):
+                    _record_requirements(
+                        entries,
+                        pyproject,
+                        record,
+                        scope=f"optional:{group}",
+                        direct=True,
+                        optional=True,
+                        extras=(group,),
+                    )
+
+        tool_section = data.get("tool", {}) if isinstance(data, dict) else {}
+        poetry = tool_section.get("poetry", {}) if isinstance(tool_section, dict) else {}
+        if isinstance(poetry, dict):
+            poetry_deps = poetry.get("dependencies", {})
+            if isinstance(poetry_deps, dict):
+                for name, version in poetry_deps.items():
+                    if not isinstance(name, str) or name == "python":
+                        continue
+                    record(
+                        name,
+                        _coerce_version_spec(version),
+                        pyproject,
+                        direct=True,
+                        scope="production",
+                    )
+
+            legacy_dev = poetry.get("dev-dependencies", {})
+            if isinstance(legacy_dev, dict):
+                for name, version in legacy_dev.items():
+                    if not isinstance(name, str):
+                        continue
+                    record(
+                        name,
+                        _coerce_version_spec(version),
+                        pyproject,
+                        direct=True,
+                        scope="development",
+                        optional=True,
+                        extras=("dev",),
+                    )
+
+            poetry_groups = poetry.get("group", {})
+            if isinstance(poetry_groups, dict):
+                for group_name, group_data in poetry_groups.items():
+                    if not isinstance(group_name, str) or not isinstance(group_data, dict):
+                        continue
+                    group_scope = (
+                        "development"
+                        if group_name in {"dev", "test", "tests"}
+                        else f"group:{group_name}"
+                    )
+                    group_optional = group_name != "default"
+                    entries = group_data.get("dependencies")
+                    if isinstance(entries, dict):
+                        for dep_name, spec in entries.items():
+                            if not isinstance(dep_name, str):
+                                continue
+                            record(
+                                dep_name,
+                                _coerce_version_spec(spec),
+                                pyproject,
+                                direct=True,
+                                scope=group_scope,
+                                optional=group_optional,
+                                extras=(group_name,) if group_optional else None,
+                            )
         if poetry_lock.exists():
             for name, version in common.read_poetry_lock(poetry_lock).items():
                 record(
