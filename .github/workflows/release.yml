@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python with uv
         uses: ./.github/actions/python-uv
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install dependencies with uv
         run: uv sync
       - name: Install rtx-trust as a tool
@@ -44,7 +44,7 @@ jobs:
         with:
           skip-existing: true
       - name: Generate SLSA provenance
-        uses: slsa-framework/slsa-github-generator@4876e96b8268fd8b7b8d8574718d06c0d0426d40
+        uses: slsa-framework/slsa-github-generator/.github/actions/generator@v2
         with:
           attestation_subject_path: "dist/*.whl"
       - name: Create GitHub Release
