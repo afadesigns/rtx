@@ -89,7 +89,8 @@ class NpmScanner(BaseScanner):
 
         package_lock = root / "package-lock.json"
         if package_lock.exists():
-            for name, version in common.load_lock_dependencies(package_lock).items():
+            deps, rels = common.load_lock_dependencies(package_lock)
+            for name, version in deps.items():
                 if not name:
                     continue
                 record(
@@ -100,10 +101,11 @@ class NpmScanner(BaseScanner):
                     scope=direct_scopes.get(name, "transitive"),
                     prefer_source=True,
                 )
-
+            relationships.extend(rels)
         pnpm_lock = root / "pnpm-lock.yaml"
         if pnpm_lock.exists():
-            for name, version in common.read_pnpm_lock(pnpm_lock).items():
+            deps, rels = common.read_pnpm_lock(pnpm_lock)
+            for name, version in deps.items():
                 record(
                     name,
                     version,
@@ -112,7 +114,7 @@ class NpmScanner(BaseScanner):
                     scope=direct_scopes.get(name, "production"),
                     prefer_source=True,
                 )
-
+            relationships.extend(rels)
         yarn_lock = root / "yarn.lock"
         if yarn_lock.exists():
             try:
@@ -120,26 +122,31 @@ class NpmScanner(BaseScanner):
             except ImportError:
                 # This should not happen if pyyaml is installed, but as a fallback
                 # we might consider logging a warning or raising an error.
-                return ScannerResult(dependencies=[], relationships=[])
-            
-            content = yarn_lock.read_text(encoding="utf-8")
-            data = yaml.safe_load(content)
+                pass # Handled by the final return statement
+            else:
+                content = yarn_lock.read_text(encoding="utf-8")
+                data = yaml.safe_load(content)
 
-            for key, value in data.items():
-                if not isinstance(value, dict):
-                    continue
-                name_match = key.split("@", 1)[0].strip()
-                version = value.get("version")
-                if name_match and version and isinstance(version, str):
-                    record(
-                        name_match,
-                        version,
-                        yarn_lock,
-                        direct=direct_flags.get(name_match),
-                        scope=direct_scopes.get(name_match, "transitive"),
-                        prefer_source=True,
-                    )
+                for key, value in data.items():
+                    if not isinstance(value, dict):
+                        continue
+                    name_match = key.split("@", 1)[0].strip()
+                    version = value.get("version")
+                    if name_match and version and isinstance(version, str):
+                        record(
+                            name_match,
+                            version,
+                            yarn_lock,
+                            direct=direct_flags.get(name_match),
+                            scope=direct_scopes.get(name_match, "transitive"),
+                            prefer_source=True,
+                        )
 
+                    # Extract relationships from yarn.lock
+                    if "dependencies" in value and isinstance(value["dependencies"], dict):
+                        for dep_name in value["dependencies"].keys():
+                            if isinstance(dep_name, str) and name_match:
+                                relationships.append((name_match, dep_name))
         results: list[Dependency] = []
         for name, version in sorted(dependencies.items()):
             manifest = origins.get(name, root)

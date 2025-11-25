@@ -187,20 +187,35 @@ def load_json_dependencies(path: Path, key: str = "dependencies") -> dict[str, s
     return {name: str(spec) for name, spec in section.items()}
 
 
-def load_lock_dependencies(path: Path) -> dict[str, str]:
+def load_lock_dependencies(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
     data = read_json(path)
+    out: dict[str, str] = {}
+    relationships: list[tuple[str, str]] = []
+
     if isinstance(data, dict) and "packages" in data:
-        return {
-            _normalize_lock_name(name): str(meta.get("version", "0.0.0")) if isinstance(meta, dict) else "0.0.0"
-            for name, meta in data["packages"].items()
-        }
-    if isinstance(data, dict) and "dependencies" in data:
-        out: dict[str, str] = {}
+        for name, meta in data["packages"].items():
+            normalized_name = _normalize_lock_name(name)
+            if isinstance(meta, dict):
+                version = str(meta.get("version", "0.0.0"))
+                out[normalized_name] = version
+                if "dependencies" in meta and isinstance(meta["dependencies"], dict):
+                    for dep_name in meta["dependencies"].keys():
+                        if isinstance(dep_name, str):
+                            relationships.append((normalized_name, _normalize_lock_name(dep_name)))
+                if "optionalDependencies" in meta and isinstance(meta["optionalDependencies"], dict):
+                    for dep_name in meta["optionalDependencies"].keys():
+                        if isinstance(dep_name, str):
+                            relationships.append((normalized_name, _normalize_lock_name(dep_name)))
+
+    elif isinstance(data, dict) and "dependencies" in data:
+        # This branch is primarily for Pipfile.lock, which has a simpler structure
         for name, info in data["dependencies"].items():
+            normalized_name = _normalize_lock_name(name)
             if isinstance(info, dict) and "version" in info:
-                out[_normalize_lock_name(name)] = str(info["version"])
-        return out
-    return {}
+                out[normalized_name] = str(info["version"])
+            # Pipfile.lock doesn't typically have nested dependencies directly in this structure
+
+    return out, relationships
 
 
 def _normalize_lock_name(name: str) -> str:
@@ -420,11 +435,13 @@ def _clean_pnpm_version(raw: str | None) -> str | None:
     return candidate
 
 
-def read_pnpm_lock(path: Path) -> dict[str, str]:
+def read_pnpm_lock(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
     data = read_yaml(path) or {}
     direct: dict[str, str] = {}
+    relationships: list[tuple[str, str]] = []
 
-    def capture(section_data: dict[str, object]) -> None:
+    # Function to capture direct dependencies from various sections
+    def capture_direct(section_data: dict[str, object]) -> None:
         for name, info in section_data.items():
             if not isinstance(name, str):
                 continue
@@ -437,10 +454,11 @@ def read_pnpm_lock(path: Path) -> dict[str, str]:
             if version:
                 merge_dependency_version(direct, name, version)
 
+    # Capture direct dependencies from importers section (root project and workspaces)
     importers = data.get("importers", {})
     if isinstance(importers, dict):
-        for importer in importers.values():
-            if not isinstance(importer, dict):
+        for importer_path, importer_data in importers.items():
+            if not isinstance(importer_data, dict):
                 continue
             for section in (
                 "dependencies",
@@ -448,24 +466,37 @@ def read_pnpm_lock(path: Path) -> dict[str, str]:
                 "devDependencies",
                 "peerDependencies",
             ):
-                section_data = importer.get(section)
+                section_data = importer_data.get(section)
                 if isinstance(section_data, dict):
-                    capture(section_data)
+                    capture_direct(section_data)
 
-    if not direct:
-        packages = data.get("packages", {})
-        if isinstance(packages, dict):
-            for key, meta in packages.items():
-                name, version = _parse_pnpm_package_key(key)
-                if name and version:
-                    merge_dependency_version(direct, name, version)
+    # Extract versions and relationships from the 'packages' section
+    packages_data = data.get("packages", {})
+    if isinstance(packages_data, dict):
+        for key, meta in packages_data.items():
+            pkg_name, pkg_version = _parse_pnpm_package_key(key)
+            if pkg_name and pkg_version:
+                # Record the package itself
+                merge_dependency_version(direct, pkg_name, pkg_version)
+
                 if isinstance(meta, dict):
-                    meta_name = meta.get("name")
-                    meta_version = _clean_pnpm_version(meta.get("version"))
-                    if isinstance(meta_name, str) and meta_version:
-                        merge_dependency_version(direct, meta_name, meta_version)
+                    # Extract dependencies from this package
+                    if "dependencies" in meta and isinstance(meta["dependencies"], dict):
+                        for dep_name in meta["dependencies"].keys():
+                            if isinstance(dep_name, str):
+                                # pnpm dependencies often include full specifiers, e.g., "foo@1.2.3"
+                                # We only care about the name for the graph edge
+                                clean_dep_name, _ = _parse_pnpm_package_key(dep_name)
+                                if clean_dep_name:
+                                    relationships.append((pkg_name, clean_dep_name))
+                    if "optionalDependencies" in meta and isinstance(meta["optionalDependencies"], dict):
+                        for dep_name in meta["optionalDependencies"].keys():
+                            if isinstance(dep_name, str):
+                                clean_dep_name, _ = _parse_pnpm_package_key(dep_name)
+                                if clean_dep_name:
+                                    relationships.append((pkg_name, clean_dep_name))
 
-    return direct
+    return direct, relationships
 
 
 _INCLUDE_FLAGS = {
