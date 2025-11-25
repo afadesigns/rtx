@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from copy import deepcopy
-from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError, computed_field
+from pydantic.types import Path
 
 SEVERITY_RANK = {
     "none": 0,
@@ -39,23 +40,26 @@ class Severity(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class Dependency:
+class Dependency(BaseModel):
     ecosystem: str
     name: str
     version: str
     direct: bool
     manifest: Path
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @computed_field
     @property
     def coordinate(self) -> str:
         return f"{self.ecosystem}:{self.name}@{self.version}"
 
+    @computed_field
     @property
     def normalized_name(self) -> str:
         """Case-insensitive identifier for cross-ecosystem lookups."""
         return self.name.casefold()
 
+    @computed_field
     @property
     def normalized_ecosystem(self) -> str:
         """Case-insensitive ecosystem key used for lookups."""
@@ -63,27 +67,26 @@ class Dependency:
 
 
 @dataclass(slots=True)
-class Advisory:
+class Advisory(BaseModel):
     identifier: str
     source: str
     severity: Severity
     summary: str
-    references: list[str] = field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
 
 
 @dataclass(slots=True)
-class TrustSignal:
+class TrustSignal(BaseModel):
     category: str
     severity: Severity
     message: str
-    evidence: dict[str, Any] = field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class SignalSummary:
-    counts: dict[str, int]
-    severity_counts: dict[str, dict[str, int]]
-    severity_totals: dict[str, int]
+class SignalSummary(BaseModel):
+    counts: dict[str, int] = Field(default_factory=dict)
+    severity_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
+    severity_totals: dict[str, int] = Field(default_factory=dict)
 
     @classmethod
     def from_findings(cls, findings: Iterable[PackageFinding]) -> SignalSummary:
@@ -116,21 +119,13 @@ class SignalSummary:
     def has_data(self) -> bool:
         return bool(self.counts)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "counts": self.counts,
-            "severity_counts": self.severity_counts,
-            "severity_totals": self.severity_totals,
-        }
-
-
-@dataclass(slots=True)
-class PackageFinding:
+class PackageFinding(BaseModel):
     dependency: Dependency
-    advisories: list[Advisory] = field(default_factory=list)
-    signals: list[TrustSignal] = field(default_factory=list)
+    advisories: list[Advisory] = Field(default_factory=list)
+    signals: list[TrustSignal] = Field(default_factory=list)
     score: float = 0.0
 
+    @computed_field
     @property
     def verdict(self) -> Severity:
         severities = [Severity.from_score(self.score)]
@@ -145,19 +140,12 @@ class PackageFinding:
         return max(severities, key=lambda level: SEVERITY_RANK[level.value])
 
 
-@dataclass(slots=True)
-class Report:
+class Report(BaseModel):
     path: Path
     managers: list[str]
     findings: list[PackageFinding]
     generated_at: datetime
-    stats: dict[str, Any] = field(default_factory=dict)
-    _signal_summary: SignalSummary | None = field(
-        init=False, default=None, repr=False, compare=False
-    )
-    _summary_cache: dict[str, Any] | None = field(
-        init=False, default=None, repr=False, compare=False
-    )
+    stats: dict[str, Any] = Field(default_factory=dict)
 
     def highest_severity(self) -> Severity:
         if not self.findings:
@@ -176,9 +164,6 @@ class Report:
         return 0
 
     def summary(self) -> dict[str, Any]:
-        cached = self._summary_cache
-        if cached is not None:
-            return deepcopy(cached)
         counts: dict[str, int] = {severity.value: 0 for severity in Severity}
         direct = 0
         manager_usage: Counter[str] = Counter()
@@ -203,10 +188,11 @@ class Report:
             "signal_severity_counts": signal_summary.severity_counts,
             "signal_severity_totals": signal_summary.severity_totals,
         }
-        self._summary_cache = summary
         return deepcopy(summary)
 
     def to_dict(self) -> dict[str, Any]:
+        # Pydantic's model_dump can handle this more gracefully, but we keep
+        # a similar structure for compatibility with existing usage.
         return {
             "summary": self.summary(),
             "findings": [
@@ -243,16 +229,13 @@ class Report:
                 for finding in self.findings
             ],
             "stats": dict(self.stats),
-            "signal_summary": self.signal_summary.to_dict(),
+            "signal_summary": self.signal_summary.model_dump(),
         }
 
     def __iter__(self) -> Iterable[PackageFinding]:
         return iter(self.findings)
 
+    @computed_field
     @property
     def signal_summary(self) -> SignalSummary:
-        cached = self._signal_summary
-        if cached is None:
-            cached = SignalSummary.from_findings(self.findings)
-            self._signal_summary = cached
-        return cached
+        return SignalSummary.from_findings(self.findings)

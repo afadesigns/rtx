@@ -11,10 +11,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import cast
 
+from pydantic import ValidationError
 from rich.console import Console
 
 from rtx.exceptions import ManifestNotFound, ReportRenderingError
-from rtx.models import Report, Severity
+from rtx.models import Dependency, PackageFinding, Report, Severity
 from rtx.system import collect_manager_diagnostics
 from rtx.utils import is_non_string_sequence, utc_now
 
@@ -159,11 +160,10 @@ def cmd_report(args: argparse.Namespace) -> int:
         console.print(f"[red]Failed to read report file:[/] {exc}")
         return 4
     try:
-        payload = json.loads(contents)
-    except json.JSONDecodeError as exc:
+        report = Report.model_validate_json(contents)
+    except ValidationError as exc:
         console.print(f"[red]Invalid report JSON:[/] {exc}")
         return 4
-    report = _report_from_payload(payload)
     try:
         output_path = _resolve_output_path(fmt, args.output)
         if fmt == "table":
@@ -198,7 +198,8 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     console = _get_console()
     statuses = collect_manager_diagnostics()
     if args.json:
-        payload = {status.name: status.to_dict() for status in statuses}
+        # Assuming ManagerStatus also implements pydantic.BaseModel or has a to_dict method
+        payload = {status.name: status.model_dump() if hasattr(status, 'model_dump') else status.to_dict() for status in statuses}
         console.print(json.dumps(payload, indent=2))
     else:
         console.print("Toolchain diagnostics:")
@@ -216,104 +217,8 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     return 1 if any_failures else 0
 
 
-def _report_from_payload(payload: Mapping[str, object]) -> Report:
-    from rtx.models import Advisory, Dependency, PackageFinding, Report, TrustSignal
+# Removed _report_from_payload as it's replaced by Report.model_validate_json
 
-    summary_obj = payload.get("summary", {})
-    summary = summary_obj if isinstance(summary_obj, Mapping) else {}
-    findings_data = payload.get("findings", [])
-    findings: list[PackageFinding] = []
-    entries = (
-        (entry for entry in findings_data if isinstance(entry, Mapping))
-        if is_non_string_sequence(findings_data)
-        else []
-    )
-    for entry in entries:
-        entry_metadata = entry.get("metadata", {})
-        dependency = Dependency(
-            ecosystem=str(entry.get("ecosystem", "unknown")),
-            name=str(entry.get("name", "unknown")),
-            version=str(entry.get("version", "0.0.0")),
-            direct=bool(entry.get("direct", False)),
-            manifest=Path(str(entry.get("manifest", "."))),
-            metadata=(dict(entry_metadata) if isinstance(entry_metadata, Mapping) else {}),
-        )
-        advisories = []
-        raw_advisories = entry.get("advisories", [])
-        if is_non_string_sequence(raw_advisories):
-            for adv in raw_advisories:
-                if not isinstance(adv, Mapping):
-                    continue
-                references_raw = adv.get("references", [])
-                references = (
-                    [ref for ref in references_raw if isinstance(ref, str)]
-                    if is_non_string_sequence(references_raw)
-                    else []
-                )
-                advisories.append(
-                    Advisory(
-                        identifier=str(adv.get("id", "UNKNOWN")),
-                        source=str(adv.get("source", "unknown")),
-                        severity=_coerce_severity(adv.get("severity", "low")),
-                        summary=str(adv.get("summary", "")),
-                        references=references,
-                    )
-                )
-        signals = []
-        raw_signals = entry.get("signals", [])
-        if is_non_string_sequence(raw_signals):
-            for sig in raw_signals:
-                if not isinstance(sig, Mapping):
-                    continue
-                evidence = sig.get("evidence", {})
-                evidence_payload = evidence if isinstance(evidence, Mapping) else {}
-                signals.append(
-                    TrustSignal(
-                        category=str(sig.get("category", "unknown")),
-                        severity=_coerce_severity(sig.get("severity", "low")),
-                        message=str(sig.get("message", "")),
-                        evidence=dict(evidence_payload),
-                    )
-                )
-        score = float(entry.get("score", 0.0) or 0.0)
-        findings.append(
-            PackageFinding(
-                dependency=dependency,
-                advisories=advisories,
-                signals=signals,
-                score=score,
-            )
-        )
-
-    generated_at = summary.get("generated_at")
-    timestamp = (
-        datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else utc_now()
-    )
-    managers_data = summary.get("managers", [])
-    if isinstance(managers_data, str):
-        managers_list: list[str] = [managers_data]
-    elif is_non_string_sequence(managers_data):
-        managers_list = [str(item) for item in managers_data]
-    else:
-        managers_list = []
-    stats_obj = payload.get("stats", {})
-    stats = stats_obj if isinstance(stats_obj, Mapping) else {}
-    return Report(
-        path=Path(str(summary.get("path", "."))),
-        managers=managers_list,
-        findings=findings,
-        generated_at=timestamp,
-        stats=dict(stats),
-    )
-
-
-def _coerce_severity(value: object) -> Severity:
-    from rtx.models import Severity
-
-    try:
-        return Severity(str(value).lower())
-    except ValueError:
-        return Severity.LOW
 
 
 @lru_cache(maxsize=1)
@@ -347,11 +252,11 @@ def _handle_signal_summary(
             if severity_display:
                 console.print(f"Signal severities: {severity_display}", style="cyan")
     if output == "-":
-        console.print(json.dumps(summary.to_dict(), indent=2))
+        console.print(json.dumps(summary.model_dump(), indent=2))
     elif output:
         path = Path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = summary.to_dict()
+        data = summary.model_dump()
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
