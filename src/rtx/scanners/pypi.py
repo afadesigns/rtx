@@ -98,8 +98,8 @@ class PyPIScanner(BaseScanner):
         requirement_context: dict[str, set[str]] = {}
 
         self._scan_pyproject_toml(root, record, requirement_context)
-
-        self._scan_uv_toml(root, record, requirement_context)
+        self._scan_poetry_lock(root, record, direct_flags, metadata_map, relationships)
+        self._scan_uv_lock(root, record, direct_flags, metadata_map, relationships)
 
         results: list[Dependency] = []
         for name, version in sorted(dependencies.items()):
@@ -216,13 +216,14 @@ class PyPIScanner(BaseScanner):
                             )
 
     def _scan_poetry_lock(
-        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]]
+        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]], relationships: list[tuple[str, str]]
     ) -> None:
         poetry_lock = root / "poetry.lock"
         if not poetry_lock.exists():
             return
 
-        for name, version in common.read_poetry_lock(poetry_lock).items():
+        deps, rels = common.read_poetry_lock(poetry_lock)
+        for name, version in deps.items():
             record(
                 name,
                 version,
@@ -230,15 +231,17 @@ class PyPIScanner(BaseScanner):
                 direct=direct_flags.get(name),
                 scope=metadata_map.get(name, {}).get("scope", "transitive"),
             )
+        relationships.extend(rels)
 
     def _scan_uv_lock(
-        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]]
+        self, root: Path, record: Callable, direct_flags: dict[str, bool], metadata_map: dict[str, dict[str, Any]], relationships: list[tuple[str, str]]
     ) -> None:
         uv_lock = root / "uv.lock"
         if not uv_lock.exists():
             return
 
-        for name, version in common.read_uv_lock(uv_lock).items():
+        deps, rels = common.read_uv_lock(uv_lock)
+        for name, version in deps.items():
             record(
                 name,
                 version,
@@ -246,7 +249,7 @@ class PyPIScanner(BaseScanner):
                 direct=direct_flags.get(name),
                 scope=metadata_map.get(name, {}).get("scope", "transitive"),
             )
-
+        relationships.extend(rels)
     def _scan_requirements_files(
         self, root: Path, record: Callable, requirement_context: dict[str, set[str]]
     ) -> None:

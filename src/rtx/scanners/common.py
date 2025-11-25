@@ -211,26 +211,42 @@ def _normalize_lock_name(name: str) -> str:
     return name
 
 
-def read_poetry_lock(path: Path) -> dict[str, str]:
+def read_poetry_lock(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
     try:
         content = read_toml(path)
     except ValueError:
-        return {}
+        return {}, []
     out: dict[str, str] = {}
+    relationships: list[tuple[str, str]] = []
     for package in content.get("package", []):
         if isinstance(package, dict):
             name = package.get("name")
             version = package.get("version")
             if isinstance(name, str) and isinstance(version, str):
                 out[name] = version
-    return out
+                # Extract relationships
+                package_dependencies = package.get("dependencies")
+                if isinstance(package_dependencies, dict):
+                    for dep_name, _ in package_dependencies.items():
+                        if isinstance(dep_name, str):
+                            relationships.append((name, dep_name))
+                elif isinstance(package_dependencies, list):
+                    for dep_entry in package_dependencies:
+                        if isinstance(dep_entry, str):
+                            try:
+                                req = Requirement(dep_entry)
+                                relationships.append((name, req.name))
+                            except InvalidRequirement:
+                                # Handle cases where it's not a standard requirement string
+                                pass
+    return out, relationships
 
 
-def read_uv_lock(path: Path) -> dict[str, str]:
+def read_uv_lock(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
     try:
         data = read_toml(path)
     except ValueError:
-        return {}
+        return {}, []
     packages = data.get("package", [])
     if isinstance(packages, dict):
         packages = [packages]
@@ -285,6 +301,8 @@ def read_uv_lock(path: Path) -> dict[str, str]:
                             direct_names.add(req.name)
 
     results: dict[str, str] = {}
+    relationships: list[tuple[str, str]] = []
+
     if direct_names:
         for name in sorted(direct_names):
             version = "*"
@@ -304,6 +322,17 @@ def read_uv_lock(path: Path) -> dict[str, str]:
                                     if isinstance(spec, str) and spec:
                                         version = spec
                                     break
+                # Extract relationships for uv.lock
+                uv_deps = package.get("dependencies", [])
+                if isinstance(uv_deps, list):
+                    for dep_entry in uv_deps:
+                        if isinstance(dep_entry, dict):
+                            dep_name = dep_entry.get("name")
+                            if isinstance(dep_name, str):
+                                relationships.append((name, dep_name))
+                        elif isinstance(dep_entry, str):
+                            # Handle simple string dependencies
+                            relationships.append((name, dep_entry))
             results[name] = version
     else:
         for name, package in catalog.items():
@@ -315,8 +344,19 @@ def read_uv_lock(path: Path) -> dict[str, str]:
             extracted = package.get("version")
             version = extracted if isinstance(extracted, str) and extracted else "*"
             results[name] = version
+            # Extract relationships for uv.lock (non-direct)
+            uv_deps = package.get("dependencies", [])
+            if isinstance(uv_deps, list):
+                for dep_entry in uv_deps:
+                    if isinstance(dep_entry, dict):
+                        dep_name = dep_entry.get("name")
+                        if isinstance(dep_name, str):
+                            relationships.append((name, dep_name))
+                    elif isinstance(dep_entry, str):
+                        # Handle simple string dependencies
+                        relationships.append((name, dep_entry))
 
-    return results
+    return results, relationships
 
 
 def _parse_pnpm_package_key(key: str) -> tuple[str | None, str | None]:
