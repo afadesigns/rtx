@@ -24,7 +24,7 @@ jobs:
       - name: Set up Python with uv
         uses: ./.github/actions/python-uv
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install dependencies with uv
         run: uv sync
       - name: Ruff lint
@@ -43,7 +43,7 @@ jobs:
       - name: Set up Python with uv
         uses: ./.github/actions/python-uv
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install dependencies with uv
         run: uv sync
       - name: Type check
@@ -53,6 +53,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
     needs: typecheck
     steps:
@@ -61,7 +62,7 @@ jobs:
       - name: Set up Python with uv
         uses: ./.github/actions/python-uv
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies with uv
         run: uv sync
       - name: Run tests
@@ -70,7 +71,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9
         with:
-          name: coverage-report
+          name: coverage-report-${{ matrix.python-version }}
           path: .coverage
 
   fuzz:
@@ -82,7 +83,7 @@ jobs:
       - name: Set up Python with uv
         uses: ./.github/actions/python-uv
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install dependencies with uv
         run: uv sync
       - name: Run fuzz harnesses
@@ -97,7 +98,7 @@ jobs:
       - name: Set up Python with uv
         uses: ./.github/actions/python-uv
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install dependencies with uv
         run: uv sync
       - name: Generate SBOM
@@ -120,7 +121,7 @@ jobs:
       - name: Set up Python with uv
         uses: ./.github/actions/python-uv
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install dependencies with uv
         run: uv sync
       - name: Run RTX Security Scan
@@ -138,4 +139,3 @@ jobs:
         uses: github/codeql-action/upload-sarif@afb413158654c6020593437299a9b1c73f309995
         with:
           sarif_file: rtx-report.json # Assuming rtx can output SARIF directly or a conversion step is added
-
