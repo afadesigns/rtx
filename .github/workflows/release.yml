@@ -15,14 +15,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@8ade135a5619b1710c0db15e8b562c6d84f0f7ee
-      - name: Set up Python
-        uses: actions/setup-python@0ac093b3e5f9a7c06d0f5bd8b63fd7d7084f57b6
+      - name: Set up Python with uv
+        uses: ./.github/actions/python-uv
         with:
           python-version: "3.11"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip build
-          pip install --require-hashes -r requirements.lock
+      - name: Install dependencies with uv
+        run: uv sync
+      - name: Install rtx-trust as a tool
+        run: uv tool install rtx-trust
+
       - name: Build distributions
         run: python -m build --sdist --wheel --outdir dist
       - name: Generate SBOM
