@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from rtx.models import Dependency
+from rtx.models import Dependency, ScannerResult
 from rtx.scanners import common
 from rtx.scanners.base import BaseScanner
 
@@ -13,15 +13,18 @@ class CargoScanner(BaseScanner):
     manifests: ClassVar[list[str]] = ["Cargo.toml", "Cargo.lock"]
     ecosystem: ClassVar[str] = "crates"
 
-    def scan(self, root: Path) -> list[Dependency]:
+    def scan(self, root: Path) -> ScannerResult:
         dependencies: dict[str, str] = {}
         origins: dict[str, Path] = {}
+        relationships: list[tuple[str, str]] = []
 
         cargo_lock = root / "Cargo.lock"
         if cargo_lock.exists():
-            for name, version in common.read_cargo_lock(cargo_lock).items():
+            deps, rels = common.read_cargo_lock(cargo_lock)
+            for name, version in deps.items():
                 dependencies.setdefault(name, version)
                 origins.setdefault(name, cargo_lock)
+            relationships.extend(rels)
 
         cargo_toml = root / "Cargo.toml"
         if cargo_toml.exists():
@@ -37,7 +40,7 @@ class CargoScanner(BaseScanner):
                         dependencies.setdefault(name, str(version))
                         origins.setdefault(name, cargo_toml)
 
-        return [
+        results: list[Dependency] = [
             self._dependency(
                 name=name,
                 version=common.normalize_version(version),
@@ -47,3 +50,4 @@ class CargoScanner(BaseScanner):
             )
             for name, version in sorted(dependencies.items())
         ]
+        return ScannerResult(dependencies=results, relationships=relationships)

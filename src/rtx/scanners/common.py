@@ -649,16 +649,23 @@ def read_go_mod(path: Path) -> dict[str, str]:
     return out
 
 
-def read_cargo_lock(path: Path) -> dict[str, str]:
+def read_cargo_lock(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
     content = read_toml(path)
     out: dict[str, str] = {}
+    relationships: list[tuple[str, str]] = []
     for package in content.get("package", []):
         if isinstance(package, dict):
             name = package.get("name")
             version = package.get("version")
             if isinstance(name, str) and isinstance(version, str):
                 out[name] = version
-    return out
+                # Extract relationships
+                package_dependencies = package.get("dependencies")
+                if isinstance(package_dependencies, list):
+                    for dep_name in package_dependencies:
+                        if isinstance(dep_name, str):
+                            relationships.append((name, dep_name))
+    return out, relationships
 
 
 def read_composer_lock(path: Path) -> dict[str, str]:
